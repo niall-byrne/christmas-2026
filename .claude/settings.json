@@ -1,0 +1,26 @@
+{
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "if [ -n \"$(git status --porcelain)\" ]; then npm run format --silent; fi"
+          },
+          {
+            "type": "command",
+            "command": "if [ -n \"$(git status --porcelain)\" ]; then npm run lint; fi"
+          },
+          {
+            "type": "command",
+            "command": "if [ -n \"$(git status --porcelain)\" ]; then npm run typecheck; fi"
+          },
+          {
+            "type": "command",
+            "command": "if [ -n \"$(git status --porcelain)\" ]; then npm test -- --passWithNoTests; fi"
+          }
+        ]
+      }
+    ]
+  }
+}
