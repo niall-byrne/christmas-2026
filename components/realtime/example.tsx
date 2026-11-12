@@ -3,16 +3,17 @@
 import { useCallback, useState, type FormEvent } from "react"
 import { sendMessage } from "@/app/actions"
 import { useRealtimeChannel } from "@/hooks/realtime-channel"
-import { messageChannel, type RealtimeMessage } from "@/lib/channels"
+import { messageChannel } from "@/lib/channels"
+import { RealtimeChannelMessage } from "@/schemas/channelMessage"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 
 export function LiveFeed() {
-  const [messages, setMessages] = useState<RealtimeMessage[]>([])
+  const [messages, setMessages] = useState<RealtimeChannelMessage[]>([])
   const [text, setText] = useState("")
 
-  const handleIncoming = useCallback((msg: RealtimeMessage) => {
+  const handleIncoming = useCallback((msg: RealtimeChannelMessage) => {
     setMessages((prev) => [...prev, msg])
   }, [])
 

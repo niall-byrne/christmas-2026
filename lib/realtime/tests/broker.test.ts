@@ -45,13 +45,18 @@ vi.mock("ioredis", () => ({
 
 const { RedisRealtimeBroker } = await import("@/lib/realtime/broker")
 
-const messageSchema = z.object({
-  id: z.string(),
-  text: z.string().min(1),
+const realtimeMessageChannelSchema = z.object({
+  id: z.uuid(),
+  text: z.string(),
+  createdAt: z.string(),
 })
 
 describe("RedisRealtimeBroker", () => {
-  const channel = new RealtimeChannel("realtime:test", messageSchema)
+  const channel = new RealtimeChannel(
+    "realtime:test",
+    realtimeMessageChannelSchema
+  )
+  const validUuid = "123e4567-e89b-12d3-a456-426614174000"
 
   beforeEach(() => {
     mockInstances.length = 0
@@ -70,7 +75,11 @@ describe("RedisRealtimeBroker", () => {
     const broker = new RedisRealtimeBroker("")
 
     await expect(
-      broker.publish(channel, { id: "1", text: "Hello" })
+      broker.publish(channel, {
+        id: validUuid,
+        text: "Hello",
+        createdAt: "12:00:00 PM",
+      })
     ).rejects.toThrow("REDIS_URL is not configured")
   })
 
@@ -86,21 +95,34 @@ describe("RedisRealtimeBroker", () => {
   it("validates and publishes serialized JSON to the Redis channel", async () => {
     const broker = new RedisRealtimeBroker("redis://localhost:6379")
 
-    const output = await broker.publish(channel, { id: "1", text: "Ping" })
+    const output = await broker.publish(channel, {
+      id: validUuid,
+      text: "Ping",
+      createdAt: "12:00:00 PM",
+    })
 
-    expect(output).toEqual({ id: "1", text: "Ping" })
+    expect(output).toEqual({
+      id: validUuid,
+      text: "Ping",
+      createdAt: "12:00:00 PM",
+    })
     expect(mockInstances).toHaveLength(1)
     expect(mockInstances[0].publish).toHaveBeenCalledWith(
       "realtime:test",
-      JSON.stringify({ id: "1", text: "Ping" })
+      JSON.stringify({ id: validUuid, text: "Ping", createdAt: "12:00:00 PM" })
     )
   })
 
   it("does not publish to Redis when payload fails schema validation", async () => {
     const broker = new RedisRealtimeBroker("redis://localhost:6379")
 
+    // Passing an invalid UUID ("1") will trigger schema validation failure
     await expect(
-      broker.publish(channel, { id: "1", text: "" })
+      broker.publish(channel, {
+        id: "1",
+        text: "Hello",
+        createdAt: "12:00:00 PM",
+      })
     ).rejects.toThrow()
 
     expect(mockInstances).toHaveLength(0)
@@ -127,11 +149,13 @@ describe("RedisRealtimeBroker", () => {
 
     subscriber.emitMessage(
       "realtime:test",
-      JSON.stringify({ id: "2", text: "Live!" })
+      JSON.stringify({ id: validUuid, text: "Live!", createdAt: "12:00:00 PM" })
     )
 
     const { value } = await reader.read()
-    expect(decoder.decode(value)).toBe('data: {"id":"2","text":"Live!"}\n\n')
+    expect(decoder.decode(value)).toBe(
+      `data: ${JSON.stringify({ id: validUuid, text: "Live!", createdAt: "12:00:00 PM" })}\n\n`
+    )
 
     abortController.abort()
 
