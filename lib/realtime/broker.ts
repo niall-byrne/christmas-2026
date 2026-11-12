@@ -40,7 +40,7 @@ export class RedisRealtimeBroker {
     return pub
   }
 
-  async publish<TSchema extends z.ZodTypeAny>(
+  async publish<TSchema extends z.ZodType>(
     channel: RealtimeChannel<TSchema>,
     data: z.input<TSchema>
   ): Promise<z.output<TSchema>> {
@@ -49,7 +49,7 @@ export class RedisRealtimeBroker {
     return validated
   }
 
-  createStreamResponse<TSchema extends z.ZodTypeAny>(
+  createStreamResponse<TSchema extends z.ZodType>(
     channel: RealtimeChannel<TSchema>,
     req: NextRequest,
     heartbeatMs = 25_000
