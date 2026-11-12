@@ -1,8 +1,8 @@
 import "server-only"
 import Redis from "ioredis"
 import { NextRequest } from "next/server"
-import type { z } from "zod"
 import type { RealtimeChannel } from "@/lib/realtime/channel"
+import type { RealtimeChannelMessage } from "@/schemas/channelMessage"
 
 const globalForRedis = globalThis as unknown as {
   redisPublishers: Map<string, Redis> | undefined
@@ -40,17 +40,17 @@ export class RedisRealtimeBroker {
     return pub
   }
 
-  async publish<TSchema extends z.ZodTypeAny>(
-    channel: RealtimeChannel<TSchema>,
-    data: z.input<TSchema>
-  ): Promise<z.output<TSchema>> {
+  async publish(
+    channel: RealtimeChannel,
+    data: RealtimeChannelMessage
+  ): Promise<RealtimeChannelMessage> {
     const validated = channel.validate(data)
     await this.getPublisher().publish(channel.name, JSON.stringify(validated))
     return validated
   }
 
-  createStreamResponse<TSchema extends z.ZodTypeAny>(
-    channel: RealtimeChannel<TSchema>,
+  createStreamResponse(
+    channel: RealtimeChannel,
     req: NextRequest,
     heartbeatMs = 25_000
   ): Response {

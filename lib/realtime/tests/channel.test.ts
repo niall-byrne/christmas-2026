@@ -1,43 +1,66 @@
-import { describe, expect, it } from "vitest";
-import { z } from "zod";
-import { RealtimeChannel } from "@/lib/realtime/channel";
-
-const testSchema = z.object({
-  id: z.string().uuid(),
-  text: z.string().trim().min(1).max(100),
-});
+import { describe, expect, it } from "vitest"
+import { RealtimeChannel } from "@/lib/realtime/channel"
+import { realtimeMessageChannelSchema } from "@/schemas/channelMessage" // Update path as needed
 
 describe("RealtimeChannel", () => {
-  const channel = new RealtimeChannel("test:channel", testSchema);
+  const channel = new RealtimeChannel(
+    "test:channel",
+    realtimeMessageChannelSchema
+  )
+  const validUuid = "123e4567-e89b-12d3-a456-426614174000"
 
   it("exposes the configured channel name", () => {
-    expect(channel.name).toBe("test:channel");
-  });
+    expect(channel.name).toBe("test:channel")
+  })
 
   it("validates and transforms valid input data", () => {
-    const id = crypto.randomUUID();
-    const result = channel.validate({ id, text: "  Hello World  " });
+    const result = channel.validate({
+      id: validUuid,
+      text: "  Hello World  ",
+      createdAt: "12:00:00 PM",
+    })
 
-    expect(result).toEqual({ id, text: "Hello World" });
-  });
+    expect(result).toEqual({
+      id: validUuid,
+      text: "Hello World",
+      createdAt: "12:00:00 PM",
+    })
+  })
 
   it("throws a ZodError when validating invalid data", () => {
-    expect(() => channel.validate({ id: "not-a-uuid", text: "   " })).toThrow();
-  });
+    expect(() =>
+      channel.validate({
+        id: "not-a-uuid",
+        text: "   ",
+        createdAt: "12:00:00 PM",
+      })
+    ).toThrow()
+  })
 
   it("parses valid JSON strings into typed payloads", () => {
-    const id = crypto.randomUUID();
-    const raw = JSON.stringify({ id, text: "Valid message" });
+    const raw = JSON.stringify({
+      id: validUuid,
+      text: "Valid message",
+      createdAt: "12:00:00 PM",
+    })
 
-    expect(channel.parse(raw)).toEqual({ id, text: "Valid message" });
-  });
+    expect(channel.parse(raw)).toEqual({
+      id: validUuid,
+      text: "Valid message",
+      createdAt: "12:00:00 PM",
+    })
+  })
 
   it("returns null when parsing malformed JSON", () => {
-    expect(channel.parse("{bad-json")).toBeNull();
-  });
+    expect(channel.parse("{bad-json")).toBeNull()
+  })
 
   it("returns null when JSON does not match the schema", () => {
-    const raw = JSON.stringify({ id: "123", text: "" });
-    expect(channel.parse(raw)).toBeNull();
-  });
-});
+    const raw = JSON.stringify({
+      id: "123", // invalid UUID
+      text: "", // empty text fails min(1) and trim
+      createdAt: "12:00:00 PM",
+    })
+    expect(channel.parse(raw)).toBeNull()
+  })
+})

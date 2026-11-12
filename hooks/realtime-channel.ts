@@ -1,22 +1,22 @@
-"use client";
+"use client"
 
-import { useEffect } from "react";
-import type { z } from "zod";
-import type { RealtimeChannel } from "@/lib/realtime/channel";
+import { useEffect } from "react"
+import type { RealtimeChannel } from "@/lib/realtime/channel"
+import type { RealtimeChannelMessage } from "@/schemas/channelMessage"
 
-export function useRealtimeChannel<TSchema extends z.ZodTypeAny>(
+export function useRealtimeChannel(
   endpoint: string,
-  channel: RealtimeChannel<TSchema>,
-  onMessage: (data: z.output<TSchema>) => void,
+  channel: RealtimeChannel,
+  onMessage: (data: RealtimeChannelMessage) => void
 ) {
   useEffect(() => {
-    const source = new EventSource(endpoint);
+    const source = new EventSource(endpoint)
 
     source.onmessage = (event) => {
-      const parsed = channel.parse(event.data);
-      if (parsed) onMessage(parsed);
-    };
+      const parsed = channel.parse(event.data)
+      if (parsed) onMessage(parsed)
+    }
 
-    return () => source.close();
-  }, [endpoint, channel, onMessage]);
+    return () => source.close()
+  }, [endpoint, channel, onMessage])
 }

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest"
-import { messageChannel, messageSchema } from "@/lib/channels"
+import { messageChannel } from "@/lib/channels"
+import { realtimeMessageChannelSchema } from "@/schemas/channelMessage"
 
 describe("lib/channels", () => {
   describe("messageChannel", () => {
@@ -30,7 +31,7 @@ describe("lib/channels", () => {
 
   describe("messageSchema", () => {
     it("trims leading and trailing whitespace from text", () => {
-      const result = messageSchema.parse({
+      const result = realtimeMessageChannelSchema.parse({
         id: crypto.randomUUID(),
         text: "   Hello Santa   ",
         createdAt: "11:30:00 AM",
@@ -40,7 +41,7 @@ describe("lib/channels", () => {
     })
 
     it("rejects empty or whitespace-only messages", () => {
-      const result = messageSchema.safeParse({
+      const result = realtimeMessageChannelSchema.safeParse({
         id: crypto.randomUUID(),
         text: "    ",
         createdAt: "11:30:00 AM",
@@ -50,7 +51,7 @@ describe("lib/channels", () => {
     })
 
     it("rejects messages longer than 500 characters", () => {
-      const result = messageSchema.safeParse({
+      const result = realtimeMessageChannelSchema.safeParse({
         id: crypto.randomUUID(),
         text: "a".repeat(501),
         createdAt: "11:30:00 AM",
@@ -60,7 +61,7 @@ describe("lib/channels", () => {
     })
 
     it("accepts messages at the exact 500-character limit", () => {
-      const result = messageSchema.safeParse({
+      const result = realtimeMessageChannelSchema.safeParse({
         id: crypto.randomUUID(),
         text: "a".repeat(500),
         createdAt: "11:30:00 AM",
@@ -70,7 +71,7 @@ describe("lib/channels", () => {
     })
 
     it("rejects non-UUID ids", () => {
-      const result = messageSchema.safeParse({
+      const result = realtimeMessageChannelSchema.safeParse({
         id: "12345",
         text: "Valid text",
         createdAt: "11:30:00 AM",
