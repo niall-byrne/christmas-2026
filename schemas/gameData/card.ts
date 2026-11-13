@@ -1,4 +1,5 @@
 import { z } from "zod"
+import { redisLookupKey } from "@/lib/game/redisLookupKey"
 
 export const BonusCardSchema = z
   .string({ error: "INVALID_BONUS_CARD" })
@@ -27,7 +28,7 @@ export const GameCardsSchema = z
   .min(1, "INVALID_GAME_CARDS")
   .refine(
     (cards) => {
-      const normalized = cards.map((c) => c.recipient.toLowerCase())
+      const normalized = cards.map((c) => redisLookupKey(c.recipient))
       return new Set(normalized).size === normalized.length
     },
     { message: "INVALID_GAME_CARDS" }

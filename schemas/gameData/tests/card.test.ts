@@ -67,6 +67,13 @@ describe("card schemas", () => {
           { recipient: "  alice ", identifier: "Snowflake" },
         ],
       ],
+      [
+        "duplicate recipients with extra internal whitespace",
+        [
+          { recipient: "Mary Jane", identifier: "Gold Star" },
+          { recipient: "  mary   jane ", identifier: "Snowflake" },
+        ],
+      ],
     ])("rejects %s with INVALID_GAME_CARDS", (_label, input) => {
       const result = GameCardsSchema.safeParse(input)
       expect(result.success).toBe(false)
