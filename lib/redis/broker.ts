@@ -1,12 +1,12 @@
 import "server-only"
 import { NextRequest } from "next/server"
 import type { z } from "zod"
-import { RedisClient } from "@/lib/redis"
-import type { RealtimeChannel } from "@/lib/realtime/channel"
+import { RedisClient } from "@/lib/redis/client"
+import type { RedisChannel } from "@/lib/redis/channel"
 
-export class RedisRealtimeBroker {
+export class RedisBroker {
   async publish<TSchema extends z.ZodType>(
-    channel: RealtimeChannel<TSchema>,
+    channel: RedisChannel<TSchema>,
     data: z.input<TSchema>
   ): Promise<z.output<TSchema>> {
     const validated = channel.validate(data)
@@ -18,7 +18,7 @@ export class RedisRealtimeBroker {
   }
 
   createStreamResponse<TSchema extends z.ZodType>(
-    channel: RealtimeChannel<TSchema>,
+    channel: RedisChannel<TSchema>,
     req: NextRequest,
     heartbeatMs = 25_000
   ): Response {
@@ -93,4 +93,4 @@ export class RedisRealtimeBroker {
   }
 }
 
-export const redisBroker = new RedisRealtimeBroker()
+export const redisBroker = new RedisBroker()

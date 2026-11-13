@@ -1,6 +1,6 @@
 import { z } from "zod"
 
-export class RealtimeChannel<TSchema extends z.ZodType = z.ZodType> {
+export class RedisChannel<TSchema extends z.ZodType = z.ZodType> {
   constructor(
     public readonly name: string,
     public readonly schema: TSchema

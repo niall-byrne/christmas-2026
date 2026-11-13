@@ -8,15 +8,15 @@ import {
   vi,
 } from "vitest"
 import { renderHook } from "@testing-library/react"
-import { useRealtimeChannel } from "@/hooks/realtime-channel"
-import { RealtimeChannel } from "@/lib/realtime/channel"
+import { useRealtimeChannel } from "@/hooks/useRealtimeChannel"
+import { RedisChannel } from "@/lib/redis/channel"
 import {
   realtimeMessageChannelSchema,
   RealtimeChannelMessage,
-} from "@/schemas/channelMessage"
+} from "@/schemas/redis/channelMessage"
 
 const ENDPOINT = "/api/realtime"
-const channel = new RealtimeChannel(
+const channel = new RedisChannel(
   "realtime:messages",
   realtimeMessageChannelSchema
 )
