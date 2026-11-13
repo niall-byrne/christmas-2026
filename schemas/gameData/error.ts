@@ -1,0 +1,28 @@
+import type { ApiErrorCode } from "@/contracts/gameData"
+
+export const ERROR_MESSAGE_MAP = new Map<ApiErrorCode, string>([
+  ["GAME_NOT_FOUND", "Game not found"],
+  ["INCORRECT_GAME_PASSWORD", "Incorrect game password"],
+  ["INTERNAL_SERVER_ERROR", "Internal server error"],
+  ["INVALID_BONUS_CARD", "Invalid bonus card"],
+  ["INVALID_GAME_CARDS", "Invalid cards"],
+  ["INVALID_GAME_ID", "Invalid game ID"],
+  ["INVALID_GAME_NAME", "Invalid name"],
+  ["INVALID_GAME_PASSWORD", "Invalid password"],
+  ["INVALID_JSON", "Invalid JSON body"],
+  ["INVALID_LEVEL", "Invalid level"],
+  ["INVALID_PLAYER_ID", "Invalid player ID"],
+  ["INVALID_PLAYER_NAME", "Invalid name"],
+  ["INVALID_SCORE_DELTA", "Invalid delta"],
+  ["INVALID_TEAM_COLOUR", "Invalid colour"],
+  ["INVALID_TEAM_ID", "Invalid team ID"],
+  ["INVALID_TEAM_NAME", "Invalid name"],
+  ["NAME_NOT_AVAILABLE", "Name not available"],
+  ["PLAYER_NOT_FOUND", "Player not found"],
+  ["RECIPIENT_NOT_FOUND", "Player not on recipient list"],
+  ["TEAM_COLOUR_NOT_AVAILABLE", "Team colour not available"],
+  ["TEAM_FULL", "Team already full"],
+  ["TEAM_NAME_NOT_AVAILABLE", "Team name not available"],
+  ["TEAM_NOT_FOUND", "Team not found"],
+  ["UNAUTHORIZED", "Authentication required"],
+])
