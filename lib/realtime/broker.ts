@@ -1,51 +1,19 @@
 import "server-only"
-import Redis from "ioredis"
 import { NextRequest } from "next/server"
 import type { z } from "zod"
+import { RedisClient } from "@/lib/redis"
 import type { RealtimeChannel } from "@/lib/realtime/channel"
 
-const globalForRedis = globalThis as unknown as {
-  redisPublishers: Map<string, Redis> | undefined
-}
-
 export class RedisRealtimeBroker {
-  private readonly redisUrl: string | undefined
-
-  constructor(redisUrl = process.env.REDIS_URL) {
-    this.redisUrl = redisUrl
-  }
-
-  private resolveUrl(): string {
-    if (!this.redisUrl || !this.redisUrl.trim()) {
-      throw new Error(
-        "REDIS_URL is not configured. Set REDIS_URL in your environment variables."
-      )
-    }
-    return this.redisUrl
-  }
-
-  private getPublisher(): Redis {
-    const url = this.resolveUrl()
-
-    if (!globalForRedis.redisPublishers) {
-      globalForRedis.redisPublishers = new Map()
-    }
-
-    let pub = globalForRedis.redisPublishers.get(url)
-    if (!pub) {
-      pub = new Redis(url)
-      globalForRedis.redisPublishers.set(url, pub)
-    }
-
-    return pub
-  }
-
   async publish<TSchema extends z.ZodType>(
     channel: RealtimeChannel<TSchema>,
     data: z.input<TSchema>
   ): Promise<z.output<TSchema>> {
     const validated = channel.validate(data)
-    await this.getPublisher().publish(channel.name, JSON.stringify(validated))
+    await RedisClient.getClient().publish(
+      channel.name,
+      JSON.stringify(validated)
+    )
     return validated
   }
 
@@ -54,9 +22,10 @@ export class RedisRealtimeBroker {
     req: NextRequest,
     heartbeatMs = 25_000
   ): Response {
-    const url = this.resolveUrl()
     const encoder = new TextEncoder()
-    const subscriber = new Redis(url)
+    const subscriber = RedisClient.getClient().duplicate()
+    subscriber.on("error", () => {})
+
     let heartbeat: ReturnType<typeof setInterval> | undefined
     let closed = false
 
