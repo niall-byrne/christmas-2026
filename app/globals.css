@@ -127,3 +127,9 @@
     @apply font-sans;
   }
 }
+
+@layer base {
+  html.accessibility-large {
+    font-size: 120%;
+  }
+}

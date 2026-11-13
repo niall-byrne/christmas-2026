@@ -8,6 +8,7 @@ import { RealtimeChannelMessage } from "@/schemas/channelMessage"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
+import { AccessibilityToggle } from "@/components/ui/accessibility"
 
 export function LiveFeed() {
   const [messages, setMessages] = useState<RealtimeChannelMessage[]>([])
@@ -29,10 +30,11 @@ export function LiveFeed() {
 
   return (
     <Card className="mx-auto mt-10 w-full max-w-md">
-      <CardHeader>
+      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
         <CardTitle>Live Feed</CardTitle>
+        <AccessibilityToggle />
       </CardHeader>
-      <CardContent className="space-y-4">
+      <CardContent className="space-y-4 pt-4">
         <div className="max-h-60 space-y-2 overflow-y-auto">
           {messages.length === 0 ? (
             <p className="text-sm text-muted-foreground">
