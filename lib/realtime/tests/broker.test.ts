@@ -1,47 +1,38 @@
+// @vitest-environment node
+
+import { EventEmitter } from "node:events"
+import type Redis from "ioredis"
 import { NextRequest } from "next/server"
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+  type MockInstance,
+} from "vitest"
 import { z } from "zod"
+import { RedisClient } from "@/lib/redis"
 import { RealtimeChannel } from "@/lib/realtime/channel"
 
-const mockInstances: MockRedis[] = []
+class MockRedis extends EventEmitter {
+  public readonly duplicates: MockRedis[] = []
+  public readonly publish = vi.fn(async () => 1)
+  public readonly subscribe = vi.fn(async () => 1)
+  public readonly unsubscribe = vi.fn(async () => 1)
+  public readonly disconnect = vi.fn()
 
-class MockRedis {
-  public handlers = new Map<string, Array<(...args: unknown[]) => void>>()
-  public publish = vi.fn(async () => 1)
-  public subscribe = vi.fn(async () => 1)
-  public unsubscribe = vi.fn(async () => 1)
-  public disconnect = vi.fn()
-
-  constructor(public url: string) {
-    mockInstances.push(this)
-  }
-
-  on(event: string, cb: (...args: unknown[]) => void) {
-    const list = this.handlers.get(event) ?? []
-    list.push(cb)
-    this.handlers.set(event, list)
-    return this
-  }
-
-  removeAllListeners(event?: string) {
-    if (event) {
-      this.handlers.delete(event)
-    } else {
-      this.handlers.clear()
-    }
-    return this
-  }
+  public readonly duplicate = vi.fn(() => {
+    const sub = new MockRedis()
+    this.duplicates.push(sub)
+    return sub
+  })
 
   emitMessage(channel: string, payload: string) {
-    for (const cb of this.handlers.get("message") ?? []) {
-      cb(channel, payload)
-    }
+    this.emit("message", channel, payload)
   }
 }
-
-vi.mock("ioredis", () => ({
-  default: MockRedis,
-}))
 
 const { RedisRealtimeBroker } = await import("@/lib/realtime/broker")
 
@@ -52,133 +43,176 @@ const realtimeMessageChannelSchema = z.object({
 })
 
 describe("RedisRealtimeBroker", () => {
+  const TEST_FIXTURES = {
+    channelName: "realtime:test",
+    streamUrl: "http://localhost:3000/api/realtime",
+    validUuid: "123e4567-e89b-12d3-a456-426614174000",
+    createdAt: "12:00:00 PM",
+  } as const
+
   const channel = new RealtimeChannel(
-    "realtime:test",
+    TEST_FIXTURES.channelName,
     realtimeMessageChannelSchema
   )
-  const validUuid = "123e4567-e89b-12d3-a456-426614174000"
+
+  let broker: InstanceType<typeof RedisRealtimeBroker>
+  let mockClient: MockRedis
+  let getClientSpy: MockInstance
 
   beforeEach(() => {
-    mockInstances.length = 0
-    const g = globalThis as unknown as {
-      redisPublishers?: Map<string, unknown>
-    }
-    g.redisPublishers?.clear()
+    broker = new RedisRealtimeBroker()
+    mockClient = new MockRedis()
+    getClientSpy = vi
+      .spyOn(RedisClient, "getClient")
+      .mockReturnValue(mockClient as unknown as Redis)
   })
 
   afterEach(() => {
     vi.useRealTimers()
-    vi.clearAllMocks()
+    vi.restoreAllMocks()
   })
 
-  it("fails hard on publish when REDIS_URL is missing or blank", async () => {
-    const broker = new RedisRealtimeBroker("")
+  describe("when RedisClient.getClient throws a configuration error", () => {
+    let configError: Error
 
-    await expect(
-      broker.publish(channel, {
-        id: validUuid,
-        text: "Hello",
-        createdAt: "12:00:00 PM",
+    beforeEach(() => {
+      configError = new Error(
+        "REDIS_URL is not configured. Set REDIS_URL in your environment variables."
+      )
+      getClientSpy.mockImplementation(() => {
+        throw configError
       })
-    ).rejects.toThrow("REDIS_URL is not configured")
-  })
-
-  it("fails hard on createStreamResponse when REDIS_URL is missing", () => {
-    const broker = new RedisRealtimeBroker("")
-    const req = new NextRequest("http://localhost:3000/api/realtime")
-
-    expect(() => broker.createStreamResponse(channel, req)).toThrow(
-      "REDIS_URL is not configured"
-    )
-  })
-
-  it("validates and publishes serialized JSON to the Redis channel", async () => {
-    const broker = new RedisRealtimeBroker("redis://localhost:6379")
-
-    const output = await broker.publish(channel, {
-      id: validUuid,
-      text: "Ping",
-      createdAt: "12:00:00 PM",
     })
 
-    expect(output).toEqual({
-      id: validUuid,
-      text: "Ping",
-      createdAt: "12:00:00 PM",
+    it("propagates the error on publish", async () => {
+      await expect(
+        broker.publish(channel, {
+          id: TEST_FIXTURES.validUuid,
+          text: "Hello",
+          createdAt: TEST_FIXTURES.createdAt,
+        })
+      ).rejects.toThrow(configError)
     })
-    expect(mockInstances).toHaveLength(1)
-    expect(mockInstances[0].publish).toHaveBeenCalledWith(
-      "realtime:test",
-      JSON.stringify({ id: validUuid, text: "Ping", createdAt: "12:00:00 PM" })
-    )
+
+    it("propagates the error on createStreamResponse", () => {
+      const req = new NextRequest(TEST_FIXTURES.streamUrl)
+
+      expect(() => broker.createStreamResponse(channel, req)).toThrow(
+        configError
+      )
+    })
   })
 
-  it("does not publish to Redis when payload fails schema validation", async () => {
-    const broker = new RedisRealtimeBroker("redis://localhost:6379")
+  describe("publish", () => {
+    describe("when given a valid payload", () => {
+      const inputPayload = {
+        id: TEST_FIXTURES.validUuid,
+        text: "Ping",
+        createdAt: TEST_FIXTURES.createdAt,
+      }
 
-    // Passing an invalid UUID ("1") will trigger schema validation failure
-    await expect(
-      broker.publish(channel, {
-        id: "1",
-        text: "Hello",
-        createdAt: "12:00:00 PM",
+      let output: z.output<typeof realtimeMessageChannelSchema>
+
+      beforeEach(async () => {
+        output = await broker.publish(channel, inputPayload)
       })
-    ).rejects.toThrow()
 
-    expect(mockInstances).toHaveLength(0)
-  })
-
-  it("streams SSE data events and cleans up Redis on request abort", async () => {
-    const broker = new RedisRealtimeBroker("redis://localhost:6379")
-    const abortController = new AbortController()
-    const req = new NextRequest("http://localhost:3000/api/realtime", {
-      signal: abortController.signal,
+      it("validates and publishes serialized JSON via RedisClient.getClient()", () => {
+        expect(output).toEqual(inputPayload)
+        expect(getClientSpy).toHaveBeenCalledTimes(1)
+        expect(mockClient.publish).toHaveBeenCalledWith(
+          TEST_FIXTURES.channelName,
+          JSON.stringify(inputPayload)
+        )
+      })
     })
 
-    const response = broker.createStreamResponse(channel, req, 60_000)
+    describe("when given a payload that fails schema validation", () => {
+      it("throws a ZodError without calling RedisClient.getClient()", async () => {
+        await expect(
+          broker.publish(channel, {
+            id: "1",
+            text: "Hello",
+            createdAt: TEST_FIXTURES.createdAt,
+          })
+        ).rejects.toThrow()
 
-    expect(response.headers.get("Content-Type")).toBe("text/event-stream")
-    expect(mockInstances).toHaveLength(1)
-
-    const subscriber = mockInstances[0]
-    const reader = response.body!.getReader()
-    const decoder = new TextDecoder()
-
-    await Promise.resolve()
-    expect(subscriber.subscribe).toHaveBeenCalledWith("realtime:test")
-
-    subscriber.emitMessage(
-      "realtime:test",
-      JSON.stringify({ id: validUuid, text: "Live!", createdAt: "12:00:00 PM" })
-    )
-
-    const { value } = await reader.read()
-    expect(decoder.decode(value)).toBe(
-      `data: ${JSON.stringify({ id: validUuid, text: "Live!", createdAt: "12:00:00 PM" })}\n\n`
-    )
-
-    abortController.abort()
-
-    await vi.waitFor(() => {
-      expect(subscriber.unsubscribe).toHaveBeenCalledWith("realtime:test")
-      expect(subscriber.disconnect).toHaveBeenCalled()
+        expect(getClientSpy).not.toHaveBeenCalled()
+        expect(mockClient.publish).not.toHaveBeenCalled()
+      })
     })
   })
 
-  it("does not throw if heartbeat fires after request abort", async () => {
-    vi.useFakeTimers()
+  describe("createStreamResponse", () => {
+    describe("when a client subscribes and receives messages", () => {
+      let abortController: AbortController
+      let response: Response
+      let subscriber: MockRedis
 
-    const broker = new RedisRealtimeBroker("redis://localhost:6379")
-    const abortController = new AbortController()
-    const req = new NextRequest("http://localhost:3000/api/realtime", {
-      signal: abortController.signal,
+      beforeEach(async () => {
+        abortController = new AbortController()
+        const req = new NextRequest(TEST_FIXTURES.streamUrl, {
+          signal: abortController.signal,
+        })
+
+        response = broker.createStreamResponse(channel, req, 60_000)
+        expect(mockClient.duplicate).toHaveBeenCalledTimes(1)
+        subscriber = mockClient.duplicates[0]
+        await Promise.resolve()
+      })
+
+      it("duplicates the shared client, attaches an error listener, and subscribes to the channel", () => {
+        expect(response.headers.get("Content-Type")).toBe("text/event-stream")
+        expect(subscriber.listenerCount("error")).toBeGreaterThanOrEqual(1)
+        expect(subscriber.subscribe).toHaveBeenCalledWith(
+          TEST_FIXTURES.channelName
+        )
+        expect(() =>
+          subscriber.emit("error", new Error("connect ECONNRESET"))
+        ).not.toThrow()
+      })
+
+      it("streams SSE data events and cleans up the subscriber on request abort", async () => {
+        const reader = response.body!.getReader()
+        const decoder = new TextDecoder()
+        const livePayload = JSON.stringify({
+          id: TEST_FIXTURES.validUuid,
+          text: "Live!",
+          createdAt: TEST_FIXTURES.createdAt,
+        })
+
+        subscriber.emitMessage(TEST_FIXTURES.channelName, livePayload)
+
+        const { value } = await reader.read()
+        expect(decoder.decode(value)).toBe(`data: ${livePayload}\n\n`)
+
+        abortController.abort()
+
+        await vi.waitFor(() => {
+          expect(subscriber.unsubscribe).toHaveBeenCalledWith(
+            TEST_FIXTURES.channelName
+          )
+          expect(subscriber.disconnect).toHaveBeenCalledTimes(1)
+        })
+      })
     })
 
-    broker.createStreamResponse(channel, req, 1_000)
-    await Promise.resolve()
+    describe("when heartbeat fires after request abort", () => {
+      it("does not throw when controller is already closed", async () => {
+        vi.useFakeTimers()
 
-    abortController.abort()
+        const abortController = new AbortController()
+        const req = new NextRequest(TEST_FIXTURES.streamUrl, {
+          signal: abortController.signal,
+        })
 
-    expect(() => vi.advanceTimersByTime(5_000)).not.toThrow()
+        broker.createStreamResponse(channel, req, 1_000)
+        await Promise.resolve()
+
+        abortController.abort()
+
+        expect(() => vi.advanceTimersByTime(5_000)).not.toThrow()
+      })
+    })
   })
 })
