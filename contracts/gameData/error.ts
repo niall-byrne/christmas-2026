@@ -1,0 +1,23 @@
+export type ApiErrorCode =
+  | "INVALID_JSON"
+  | "INVALID_GAME_ID"
+  | "INVALID_TEAM_ID"
+  | "INVALID_PLAYER_ID"
+  | "INVALID_GAME_NAME"
+  | "INVALID_LEVEL"
+  | "INVALID_TEAM_NAME"
+  | "INVALID_TEAM_COLOUR"
+  | "INVALID_SCORE_DELTA"
+  | "INVALID_PLAYER_NAME"
+  | "GAME_NOT_FOUND"
+  | "TEAM_NOT_FOUND"
+  | "PLAYER_NOT_FOUND"
+  | "TEAM_NAME_NOT_AVAILABLE"
+  | "NAME_NOT_AVAILABLE"
+  | "TEAM_FULL"
+  | "INTERNAL_SERVER_ERROR"
+
+export interface ApiErrorResponse {
+  message: string
+  error: ApiErrorCode
+}

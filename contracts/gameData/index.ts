@@ -1,0 +1,5 @@
+export * from "@/contracts/gameData/error"
+export * from "@/contracts/gameData/game"
+export * from "@/contracts/gameData/player"
+export * from "@/contracts/gameData/route"
+export * from "@/contracts/gameData/team"
