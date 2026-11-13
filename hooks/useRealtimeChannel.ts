@@ -2,11 +2,11 @@
 
 import { useEffect } from "react"
 import type { z } from "zod"
-import type { RealtimeChannel } from "@/lib/realtime/channel"
+import type { RedisChannel } from "@/lib/redis/channel"
 
 export function useRealtimeChannel<TSchema extends z.ZodTypeAny>(
   endpoint: string,
-  channel: RealtimeChannel<TSchema>,
+  channel: RedisChannel<TSchema>,
   onMessage: (data: z.output<TSchema>) => void
 ) {
   useEffect(() => {

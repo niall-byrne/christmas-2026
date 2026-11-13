@@ -3,9 +3,9 @@
 import {
   realtimeMessageChannelSchema,
   RealtimeChannelMessage,
-} from "@/schemas/channelMessage"
-import { messageChannel } from "@/lib/channels"
-import { redisBroker } from "@/lib/realtime/broker"
+} from "@/schemas/redis/channelMessage"
+import { realtimeChannel } from "@/lib/game/realtimeChannel"
+import { redisBroker } from "@/lib/redis/broker"
 
 export async function sendMessage(
   text: string
@@ -17,7 +17,7 @@ export async function sendMessage(
     createdAt: new Date().toLocaleTimeString(),
   })
 
-  await redisBroker.publish(messageChannel, message)
+  await redisBroker.publish(realtimeChannel, message)
 
   return message
 }

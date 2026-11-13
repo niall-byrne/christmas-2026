@@ -13,8 +13,8 @@ import {
   type MockInstance,
 } from "vitest"
 import { z } from "zod"
-import { RedisClient } from "@/lib/redis"
-import { RealtimeChannel } from "@/lib/realtime/channel"
+import { RedisClient } from "@/lib/redis/client"
+import { RedisChannel } from "@/lib/redis/channel"
 
 class MockRedis extends EventEmitter {
   public readonly duplicates: MockRedis[] = []
@@ -34,7 +34,7 @@ class MockRedis extends EventEmitter {
   }
 }
 
-const { RedisRealtimeBroker } = await import("@/lib/realtime/broker")
+const { RedisBroker } = await import("@/lib/redis/broker")
 
 const realtimeMessageChannelSchema = z.object({
   id: z.uuid(),
@@ -42,7 +42,7 @@ const realtimeMessageChannelSchema = z.object({
   createdAt: z.string(),
 })
 
-describe("RedisRealtimeBroker", () => {
+describe("RedisBroker", () => {
   const TEST_FIXTURES = {
     channelName: "realtime:test",
     streamUrl: "http://localhost:3000/api/realtime",
@@ -50,17 +50,17 @@ describe("RedisRealtimeBroker", () => {
     createdAt: "12:00:00 PM",
   } as const
 
-  const channel = new RealtimeChannel(
+  const channel = new RedisChannel(
     TEST_FIXTURES.channelName,
     realtimeMessageChannelSchema
   )
 
-  let broker: InstanceType<typeof RedisRealtimeBroker>
+  let broker: InstanceType<typeof RedisBroker>
   let mockClient: MockRedis
   let getClientSpy: MockInstance
 
   beforeEach(() => {
-    broker = new RedisRealtimeBroker()
+    broker = new RedisBroker()
     mockClient = new MockRedis()
     getClientSpy = vi
       .spyOn(RedisClient, "getClient")

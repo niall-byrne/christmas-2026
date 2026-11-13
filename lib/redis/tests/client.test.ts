@@ -24,7 +24,7 @@ vi.mock("ioredis", () => ({
   default: MockRedis,
 }))
 
-const { RedisClient } = await import("@/lib/redis")
+const { RedisClient } = await import("@/lib/redis/client")
 
 describe("RedisClient", () => {
   const TEST_FIXTURES = {

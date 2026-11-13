@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest"
-import { RealtimeChannel } from "@/lib/realtime/channel"
-import { realtimeMessageChannelSchema } from "@/schemas/channelMessage"
+import { RedisChannel } from "@/lib/redis/channel"
+import { realtimeMessageChannelSchema } from "@/schemas/redis/channelMessage"
 
-describe("RealtimeChannel", () => {
-  const channel = new RealtimeChannel(
+describe("RedisChannel", () => {
+  const channel = new RedisChannel(
     "realtime:messages",
     realtimeMessageChannelSchema
   )
