@@ -2,9 +2,9 @@
 
 import { useCallback, useState, type FormEvent } from "react"
 import { sendMessage } from "@/app/actions"
-import { useRealtimeChannel } from "@/hooks/realtime-channel"
-import { messageChannel } from "@/lib/channels"
-import { RealtimeChannelMessage } from "@/schemas/channelMessage"
+import { useRealtimeChannel } from "@/hooks/useRealtimeChannel"
+import { realtimeChannel } from "@/lib/game/realtimeChannel"
+import { RealtimeChannelMessage } from "@/schemas/redis/channelMessage"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -18,7 +18,7 @@ export function LiveFeed() {
     setMessages((prev) => [...prev, msg])
   }, [])
 
-  useRealtimeChannel("/api/realtime", messageChannel, handleIncoming)
+  useRealtimeChannel("/api/realtime", realtimeChannel, handleIncoming)
 
   async function handleSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault()

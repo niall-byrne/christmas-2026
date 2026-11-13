@@ -1,9 +1,9 @@
 import { NextRequest } from "next/server"
-import { messageChannel } from "@/lib/channels"
-import { redisBroker } from "@/lib/realtime/broker"
+import { realtimeChannel } from "@/lib/game/realtimeChannel"
+import { redisBroker } from "@/lib/redis/broker"
 
 export const dynamic = "force-dynamic"
 
 export function GET(req: NextRequest) {
-  return redisBroker.createStreamResponse(messageChannel, req)
+  return redisBroker.createStreamResponse(realtimeChannel, req)
 }
