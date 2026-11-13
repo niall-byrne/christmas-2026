@@ -1,0 +1,5 @@
+export * from "@/schemas/gameData/common"
+export * from "@/schemas/gameData/error"
+export * from "@/schemas/gameData/game"
+export * from "@/schemas/gameData/team"
+export * from "@/schemas/gameData/player"
