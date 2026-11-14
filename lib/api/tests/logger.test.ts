@@ -24,10 +24,10 @@ const TEST_FIXTURES = {
   gameId: "a1b2c3d4e5f6g7h8i9j0k1l2",
   teamId: "z9y8x7w6v5u4t3s2r1q0p9o8",
   playerId: "m1n2b3v4c5x6z7l8k9j0h1g2",
-  gamesUrl: "http://localhost:3000/api/games",
+  gamesUrl: "http://localhost:3000/api/v1/games",
   http: {
     method: "POST",
-    path: "/api/games",
+    path: "/api/v1/games",
     statusCode: 500,
     durationMs: 12,
   },

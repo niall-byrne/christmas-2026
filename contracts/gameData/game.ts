@@ -13,7 +13,7 @@ export type ActiveGameLevel = LessThan<typeof GAME_COMPLETE_LEVEL>
 export type CompletedGameLevel = typeof GAME_COMPLETE_LEVEL
 export type GameLevel = ActiveGameLevel | CompletedGameLevel
 
-// POST /api/games
+// POST /api/v1/games
 export interface CreateGameRequest {
   name: string
   password: string
@@ -27,10 +27,11 @@ export interface CreateGameResponse {
   level: GameLevel
 }
 
-// GET /api/games/[gameId]
+// GET /api/v1/games/[gameId]
 interface BaseGameResponse {
   gameId: string
   name: string
+  revision: number
   createdAt: string
   recipients: string[]
   teams: TeamState[]
@@ -46,7 +47,7 @@ export type GetGameResponse =
       cards: CardState[]
     })
 
-// POST /api/games/[gameId]/join
+// POST /api/v1/games/[gameId]/join
 export interface JoinGameRequest {
   password: string
 }
@@ -55,7 +56,7 @@ export interface JoinGameResponse {
   gameId: string
 }
 
-// PATCH /api/games/[gameId]
+// PATCH /api/v1/games/[gameId]
 export interface UpdateGameRequest {
   level?: GameLevel
   name?: string

@@ -4,7 +4,7 @@ export interface PlayerState {
   ready: boolean
 }
 
-// POST /api/games/[gameId]/teams/[teamId]/players
+// POST /api/v1/games/[gameId]/teams/[teamId]/players
 export interface AddPlayerRequest {
   name: string
 }
@@ -14,7 +14,7 @@ export interface AddPlayerResponse {
   name: string
 }
 
-// DELETE /api/games/[gameId]/teams/[teamId]/players/[playerId]
+// DELETE /api/v1/games/[gameId]/teams/[teamId]/players/[playerId]
 export interface RemovePlayerResponse {
   message: string
 }
