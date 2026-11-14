@@ -1,271 +1,215 @@
 import { z } from "zod"
+import type {
+  ApiEndpointContext,
+  ApiEndpointInput,
+  ApiEndpointOptions,
+  ApiEndpointResult,
+} from "@/contracts/api"
 import type { ApiErrorCode } from "@/contracts/gameData"
-import {
-  AuthorizationError,
-  MissingAuthSecretError,
-} from "@/lib/api/error/auth"
+import { AuthorizationError } from "@/lib/api/error/auth"
+import { ApiRouteError } from "@/lib/api/error/endpoint"
 import { Authorization } from "@/lib/api/auth"
 import { ApiLogger } from "@/lib/api/logger"
 import { ERROR_MESSAGE_MAP } from "@/schemas/gameData"
 
-export type ApiEndpointResult<TData = unknown> =
-  | {
-      status?: number
-      data?: TData
-      headers?: HeadersInit
-    }
-  | Response
-
-export interface ApiEndpointContext<Params = Record<string, unknown>> {
-  params?: Params | Promise<Params>
-}
-
-export interface ApiEndpointOptions<
-  TParams extends z.ZodTypeAny = z.ZodTypeAny,
-  TBody extends z.ZodTypeAny = z.ZodTypeAny,
+export abstract class ApiEndpoint<
+  TParams extends z.ZodType = z.ZodType,
+  TBody extends z.ZodType = z.ZodType,
   TData = unknown,
 > {
-  paramsSchema?: TParams
-  bodySchema?: TBody
-  auth?: boolean
-  handler: (input: {
-    params: z.output<TParams>
-    body: z.output<TBody>
+  constructor(protected readonly options: ApiEndpointOptions<TParams, TBody>) {}
+
+  protected createErrorResponse(
+    error: ApiErrorCode,
+    statusCode: number,
+    message = ERROR_MESSAGE_MAP.get(error) ?? "Request failed"
+  ): Response {
+    return Response.json({ message, error }, { status: statusCode })
+  }
+
+  protected async parseBody(
     request: Request
-    logger: ApiLogger
-  }) => Promise<ApiEndpointResult<TData>> | ApiEndpointResult<TData>
-}
+  ): Promise<z.output<TBody> | undefined> {
+    const schema = this.options.bodySchema
+    if (!schema || ["GET", "HEAD"].includes(request.method)) {
+      return undefined
+    }
 
-export class ApiRouteError extends Error {
-  readonly statusCode: number
-  readonly error: ApiErrorCode
+    const text = await request.text()
+    if (!text.trim()) {
+      return undefined
+    }
 
-  constructor(error: ApiErrorCode, statusCode = 400, message?: string) {
-    super(message ?? ERROR_MESSAGE_MAP.get(error) ?? "Request failed")
-    this.name = "ApiRouteError"
-    this.error = error
-    this.statusCode = statusCode
-    Object.setPrototypeOf(this, ApiRouteError.prototype)
-  }
-}
+    let json: unknown
+    try {
+      json = JSON.parse(text)
+    } catch {
+      throw new ApiRouteError("INVALID_JSON")
+    }
 
-function buildErrorResponse(
-  error: ApiErrorCode,
-  statusCode: number,
-  message = ERROR_MESSAGE_MAP.get(error) ?? "Request failed"
-): Response {
-  return Response.json(
-    {
-      message,
-      error,
-    },
-    { status: statusCode }
-  )
-}
+    const parsed = schema.safeParse(json)
+    if (!parsed.success) {
+      const code = parsed.error.issues[0]?.message as ApiErrorCode | undefined
+      throw new ApiRouteError(code ?? "INVALID_JSON")
+    }
 
-async function parseBody<TBody extends z.ZodTypeAny>(
-  request: Request,
-  bodySchema?: TBody
-): Promise<z.output<TBody> | undefined> {
-  if (!bodySchema || ["GET", "HEAD"].includes(request.method)) {
-    return undefined
+    return parsed.data
   }
 
-  const text = await request.text()
-  if (!text.trim()) {
-    return undefined
+  protected resolveRequestIds(params: unknown): Record<string, string> {
+    if (!params || typeof params !== "object") {
+      return {}
+    }
+
+    const record = params as Record<string, unknown>
+    const ids: Record<string, string> = {}
+    for (const key of ["gameId", "teamId", "playerId"]) {
+      const value = record[key]
+      if (typeof value === "string") {
+        ids[key] = value
+      }
+    }
+    return ids
   }
 
-  let json: unknown
-  try {
-    json = JSON.parse(text)
-  } catch {
-    throw new ApiRouteError("INVALID_JSON", 400)
+  protected createJsonResponse(
+    result: Exclude<ApiEndpointResult<TData>, Response>
+  ): Response {
+    return Response.json(result.data ?? null, {
+      status: result.status ?? 200,
+      headers: result.headers,
+    })
   }
 
-  const parsed = bodySchema.safeParse(json)
-  if (!parsed.success) {
-    const firstIssue = parsed.error.issues[0]
-    const code =
-      (firstIssue?.message as ApiErrorCode | undefined) ?? "INVALID_JSON"
-    throw new ApiRouteError(code, 400)
-  }
+  protected abstract execute(
+    input: ApiEndpointInput<z.output<TParams>, z.output<TBody>>
+  ): Promise<ApiEndpointResult<TData>> | ApiEndpointResult<TData>
 
-  return parsed.data as z.output<TBody>
-}
-
-function resolveRequestId(
-  params?: Record<string, unknown>
-): Record<string, string> {
-  const next: Record<string, string> = {}
-  if (typeof params?.gameId === "string") next.gameId = params.gameId
-  if (typeof params?.teamId === "string") next.teamId = params.teamId
-  if (typeof params?.playerId === "string") next.playerId = params.playerId
-  return next
-}
-
-export function createEndpoint<
-  TParams extends z.ZodTypeAny = z.ZodTypeAny,
-  TBody extends z.ZodTypeAny = z.ZodTypeAny,
-  TData = unknown,
->(options: ApiEndpointOptions<TParams, TBody, TData>) {
-  return async function endpoint(
+  readonly handler = async (
     request: Request,
     context: ApiEndpointContext<z.output<TParams>> = {}
-  ) {
+  ): Promise<Response> => {
     const startedAt = Date.now()
-    const paramsValue = context.params
-      ? await Promise.resolve(context.params)
-      : {}
-    const logger = ApiLogger.requestFactory(request, {
-      defaultContext: {
-        id: resolveRequestId(paramsValue as Record<string, unknown>),
-      },
-    })
+    let requestIds: Record<string, string> = {}
+    let logger = ApiLogger.requestFactory(request)
 
     try {
-      let params: z.output<TParams> = undefined as z.output<TParams>
+      const paramsValue = context.params
+        ? await Promise.resolve(context.params)
+        : {}
+      requestIds = this.resolveRequestIds(paramsValue)
+      logger = ApiLogger.requestFactory(request, {
+        defaultContext: { id: requestIds },
+      })
 
-      if (options.paramsSchema) {
-        const parsed = options.paramsSchema.safeParse(paramsValue)
-        if (!parsed.success) {
-          const firstIssue = parsed.error.issues[0]
-          const code =
-            (firstIssue?.message as ApiErrorCode | undefined) ??
-            "INVALID_GAME_ID"
-          throw new ApiRouteError(code, 400)
-        }
-        params = parsed.data as z.output<TParams>
-      }
-
-      if (options.auth) {
-        Authorization.authorizeRequest({
-          request,
-          gameId:
-            typeof (paramsValue as Record<string, unknown>)?.gameId === "string"
-              ? ((paramsValue as Record<string, unknown>).gameId as string)
-              : undefined,
-          required: true,
-        })
-      }
-
-      const body = await parseBody(request, options.bodySchema)
-      const result = await options.handler({
+      const params = this.parseParams(paramsValue)
+      this.authorize(request, paramsValue)
+      const body = await this.parseBody(request)
+      const result = await this.execute({
         params,
         body: body as z.output<TBody>,
         request,
         logger,
       })
-
       const response =
         result instanceof Response
           ? result
-          : new Response(JSON.stringify(result?.data ?? null), {
-              status: result?.status ?? 200,
-              headers: result?.headers
-                ? new Headers(result.headers)
-                : undefined,
-            })
+          : this.createJsonResponse(
+              result as Exclude<ApiEndpointResult<TData>, Response>
+            )
 
-      if (!(result instanceof Response)) {
-        response.headers.set("Content-Type", "application/json; charset=utf-8")
-      }
-
-      logger.write(
-        "info",
+      logger.info(
         `${request.method} ${new URL(request.url).pathname} ${response.status}`,
         {
-          http: {
-            method: request.method,
-            path: new URL(request.url).pathname,
-            statusCode: response.status,
-            durationMs: Date.now() - startedAt,
-          },
-          id: resolveRequestId(paramsValue as Record<string, unknown>),
+          http: this.getHttpContext(request, response.status, startedAt),
+          id: requestIds,
         }
       )
-
       return response
     } catch (error) {
-      const statusCodeFromError =
-        error instanceof ApiRouteError
-          ? error.statusCode
-          : error instanceof AuthorizationError
-            ? 401
-            : error instanceof MissingAuthSecretError
-              ? 500
-              : 500
+      return this.handleError(error, request, requestIds, logger, startedAt)
+    }
+  }
 
-      if (error instanceof AuthorizationError) {
-        logger.write("warn", `Unauthorized request: ${error.reason}`, {
-          http: {
-            method: request.method,
-            path: new URL(request.url).pathname,
-            statusCode: 401,
-            durationMs: Date.now() - startedAt,
-          },
-          error,
-        })
-        return buildErrorResponse("UNAUTHORIZED", 401)
-      }
+  protected parseParams(params: unknown): z.output<TParams> {
+    const schema = this.options.paramsSchema
+    if (!schema) {
+      return undefined as z.output<TParams>
+    }
 
-      if (error instanceof MissingAuthSecretError) {
-        logger.write("error", error.message, {
-          http: {
-            method: request.method,
-            path: new URL(request.url).pathname,
-            statusCode: 500,
-            durationMs: Date.now() - startedAt,
-          },
-          error,
-        })
-        return buildErrorResponse("INTERNAL_SERVER_ERROR", 500)
-      }
+    const parsed = schema.safeParse(params)
+    if (!parsed.success) {
+      const code = parsed.error.issues[0]?.message as ApiErrorCode | undefined
+      throw new ApiRouteError(code ?? "INVALID_GAME_ID")
+    }
+    return parsed.data
+  }
 
-      if (error instanceof ApiRouteError) {
-        logger.write("warn", `${error.error}: ${error.message}`, {
-          http: {
-            method: request.method,
-            path: new URL(request.url).pathname,
-            statusCode: error.statusCode,
-            durationMs: Date.now() - startedAt,
-          },
-          error,
-        })
-        return buildErrorResponse(error.error, error.statusCode, error.message)
-      }
+  protected authorize(request: Request, params: unknown): void {
+    if (!this.options.auth) {
+      return
+    }
 
-      if (
-        error instanceof Error &&
-        /JSON|Unexpected token|Unexpected end/i.test(error.message)
-      ) {
-        logger.write("warn", "Malformed JSON body", {
-          http: {
-            method: request.method,
-            path: new URL(request.url).pathname,
-            statusCode: 400,
-            durationMs: Date.now() - startedAt,
-          },
-          error,
-        })
-        return buildErrorResponse("INVALID_JSON", 400)
-      }
+    const gameId =
+      params && typeof params === "object" && "gameId" in params
+        ? params.gameId
+        : undefined
+    Authorization.authorizeRequest({
+      request,
+      gameId: typeof gameId === "string" ? gameId : undefined,
+      required: true,
+    })
+  }
 
-      logger.write(
-        "error",
-        error instanceof Error ? error.message : "Unhandled API error",
-        {
-          http: {
-            method: request.method,
-            path: new URL(request.url).pathname,
-            statusCode: statusCodeFromError,
-            durationMs: Date.now() - startedAt,
-          },
-          error,
-        }
+  protected handleError(
+    error: unknown,
+    request: Request,
+    requestIds: Record<string, string>,
+    logger: ApiLogger,
+    startedAt: number
+  ): Response {
+    if (error instanceof AuthorizationError) {
+      logger.warn(`Unauthorized request: ${error.reason}`, {
+        http: this.getHttpContext(request, 401, startedAt),
+        id: requestIds,
+        error,
+      })
+      return this.createErrorResponse("UNAUTHORIZED", 401)
+    }
+
+    if (error instanceof ApiRouteError) {
+      logger.warn(`${error.error}: ${error.message}`, {
+        http: this.getHttpContext(request, error.statusCode, startedAt),
+        id: requestIds,
+        error,
+      })
+      return this.createErrorResponse(
+        error.error,
+        error.statusCode,
+        error.message
       )
+    }
 
-      return buildErrorResponse("INTERNAL_SERVER_ERROR", 500)
+    const message =
+      error instanceof Error ? error.message : "Unhandled API error"
+    logger.error(message, {
+      http: this.getHttpContext(request, 500, startedAt),
+      id: requestIds,
+      error,
+    })
+    return this.createErrorResponse("INTERNAL_SERVER_ERROR", 500)
+  }
+
+  protected getHttpContext(
+    request: Request,
+    statusCode: number,
+    startedAt: number
+  ) {
+    return {
+      method: request.method,
+      path: new URL(request.url).pathname,
+      statusCode,
+      durationMs: Date.now() - startedAt,
     }
   }
 }

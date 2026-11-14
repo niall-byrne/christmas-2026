@@ -1,5 +1,7 @@
 import "server-only"
-import { createEndpoint, ApiRouteError } from "@/lib/api/endpoint"
+import type { ApiEndpointInput } from "@/contracts/api"
+import { ApiRouteError } from "@/lib/api/error/endpoint"
+import { ApiEndpoint } from "@/lib/api/endpoint"
 import { redisKeys } from "@/lib/game/redisKeys"
 import { RedisClient } from "@/lib/redis/client"
 import { GameParamsSchema } from "@/schemas/gameData/game"
@@ -10,10 +12,14 @@ const TeamPlayerParamsSchema = GameParamsSchema.extend({
   playerId: z.string().regex(/^[a-z0-9]{24}$/),
 })
 
-export const DELETE = createEndpoint({
-  paramsSchema: TeamPlayerParamsSchema,
-  auth: true,
-  handler: async ({ params }) => {
+class RemovePlayerEndpoint extends ApiEndpoint<typeof TeamPlayerParamsSchema> {
+  constructor() {
+    super({ paramsSchema: TeamPlayerParamsSchema, auth: true })
+  }
+
+  protected async execute({
+    params,
+  }: ApiEndpointInput<z.output<typeof TeamPlayerParamsSchema>, unknown>) {
     const client = RedisClient.getClient()
     const gameKey = redisKeys.game(params.gameId)
     const teamKey = redisKeys.team(params.gameId, params.teamId)
@@ -55,5 +61,7 @@ export const DELETE = createEndpoint({
         message: "Player removed",
       },
     }
-  },
-})
+  }
+}
+
+export const DELETE = new RemovePlayerEndpoint().handler

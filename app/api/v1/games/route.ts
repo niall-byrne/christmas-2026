@@ -1,6 +1,7 @@
 import "server-only"
+import type { ApiEndpointInput } from "@/contracts/api"
 import { Authorization } from "@/lib/api/auth"
-import { createEndpoint } from "@/lib/api/endpoint"
+import { ApiEndpoint } from "@/lib/api/endpoint"
 import {
   createGameId,
   createPasswordSalt,
@@ -9,12 +10,21 @@ import {
 } from "@/lib/game/helpers"
 import { redisKeys } from "@/lib/game/redisKeys"
 import { RedisClient } from "@/lib/redis/client"
+import { z } from "zod"
 import { GAME_LOBBY_LEVEL } from "@/contracts/gameData/game"
 import { CreateGameBodySchema } from "@/schemas/gameData/game"
 
-export const POST = createEndpoint({
-  bodySchema: CreateGameBodySchema,
-  handler: async ({ body }) => {
+class CreateGameEndpoint extends ApiEndpoint<
+  z.ZodType,
+  typeof CreateGameBodySchema
+> {
+  constructor() {
+    super({ bodySchema: CreateGameBodySchema })
+  }
+
+  protected async execute({
+    body,
+  }: ApiEndpointInput<unknown, z.output<typeof CreateGameBodySchema>>) {
     const gameId = createGameId()
     const salt = createPasswordSalt()
     const client = RedisClient.getClient()
@@ -52,5 +62,7 @@ export const POST = createEndpoint({
         "Set-Cookie": Authorization.responseHeaderFactory(gameId),
       },
     }
-  },
-})
+  }
+}
+
+export const POST = new CreateGameEndpoint().handler

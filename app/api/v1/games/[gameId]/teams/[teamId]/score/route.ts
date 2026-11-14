@@ -1,5 +1,7 @@
 import "server-only"
-import { createEndpoint, ApiRouteError } from "@/lib/api/endpoint"
+import type { ApiEndpointInput } from "@/contracts/api"
+import { ApiRouteError } from "@/lib/api/error/endpoint"
+import { ApiEndpoint } from "@/lib/api/endpoint"
 import { redisKeys } from "@/lib/game/redisKeys"
 import { RedisClient } from "@/lib/redis/client"
 import { GameParamsSchema } from "@/schemas/gameData/game"
@@ -10,11 +12,25 @@ const TeamScoreParamsSchema = GameParamsSchema.extend({
   teamId: z.string().regex(/^[a-z0-9]{24}$/),
 })
 
-export const PATCH = createEndpoint({
-  paramsSchema: TeamScoreParamsSchema,
-  bodySchema: UpdateTeamScoreBodySchema,
-  auth: true,
-  handler: async ({ params, body }) => {
+class UpdateTeamScoreEndpoint extends ApiEndpoint<
+  typeof TeamScoreParamsSchema,
+  typeof UpdateTeamScoreBodySchema
+> {
+  constructor() {
+    super({
+      paramsSchema: TeamScoreParamsSchema,
+      bodySchema: UpdateTeamScoreBodySchema,
+      auth: true,
+    })
+  }
+
+  protected async execute({
+    params,
+    body,
+  }: ApiEndpointInput<
+    z.output<typeof TeamScoreParamsSchema>,
+    z.output<typeof UpdateTeamScoreBodySchema>
+  >) {
     const client = RedisClient.getClient()
     const gameKey = redisKeys.game(params.gameId)
     const teamKey = redisKeys.team(params.gameId, params.teamId)
@@ -37,5 +53,7 @@ export const PATCH = createEndpoint({
         score: Number(score),
       },
     }
-  },
-})
+  }
+}
+
+export const PATCH = new UpdateTeamScoreEndpoint().handler
