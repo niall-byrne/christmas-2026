@@ -235,6 +235,7 @@ describe("game schemas", () => {
     it("coerces stringified Redis hash fields including password_hash and bonus_card", () => {
       const parsed = GameHashSchema.parse({
         level: "2",
+        revision: "7",
         created_at: "2026-11-12T21:50:00.123Z",
         name: "Friday Trivia",
         password_hash: "0123456789abcdef:fedcba9876543210",
@@ -243,6 +244,7 @@ describe("game schemas", () => {
 
       expect(parsed).toEqual({
         level: 2,
+        revision: 7,
         created_at: "2026-11-12T21:50:00.123Z",
         name: "Friday Trivia",
         password_hash: "0123456789abcdef:fedcba9876543210",
@@ -254,6 +256,7 @@ describe("game schemas", () => {
       expect(
         GameHashSchema.safeParse({
           level: "2",
+          revision: "1",
           created_at: "2026-11-12T21:50:00.123Z",
           name: "Friday Trivia",
           password_hash: "salt:hash",
@@ -263,6 +266,7 @@ describe("game schemas", () => {
       expect(
         GameHashSchema.safeParse({
           level: "2",
+          revision: "1",
           created_at: "2026-11-12T21:50:00.123Z",
           name: "Friday Trivia",
           bonus_card: "Gold Crown",
@@ -272,6 +276,7 @@ describe("game schemas", () => {
       expect(
         GameHashSchema.safeParse({
           level: "7",
+          revision: "1",
           created_at: "2026-11-12T21:50:00.123Z",
           name: "Friday Trivia",
           password_hash: "salt:hash",
@@ -287,6 +292,7 @@ describe("game schemas", () => {
     const basePayload = {
       gameId: VALID_GAME_ID,
       name: "Friday Trivia",
+      revision: 3,
       createdAt: "2026-11-12T21:50:00.123Z",
       recipients: ["Alice", "Bob"],
       teams: [

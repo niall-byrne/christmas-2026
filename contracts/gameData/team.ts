@@ -8,7 +8,7 @@ export interface TeamState {
   players: PlayerState[]
 }
 
-// POST /api/games/[gameId]/teams
+// POST /api/v1/games/[gameId]/teams
 export interface CreateTeamRequest {
   name: string
   color: string
@@ -21,7 +21,7 @@ export interface CreateTeamResponse {
   score: number
 }
 
-// PATCH /api/games/[gameId]/teams/[teamId]/score
+// PATCH /api/v1/games/[gameId]/teams/[teamId]/score
 export interface UpdateTeamScoreRequest {
   delta: number
 }

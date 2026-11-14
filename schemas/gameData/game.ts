@@ -70,6 +70,7 @@ export const GameParamsSchema = z.object({
 
 export const GameHashSchema = z.object({
   level: z.coerce.number().int().min(GAME_LOBBY_LEVEL).max(GAME_COMPLETE_LEVEL),
+  revision: z.coerce.number().int().min(1),
   created_at: z.string(),
   name: z.string().min(1).max(80),
   password_hash: z.string().min(1),
@@ -93,6 +94,7 @@ const TeamStateSchema = z.object({
 const BaseGameResponseSchema = z.object({
   gameId: GameIdSchema,
   name: GameNameSchema,
+  revision: z.number().int().min(1),
   createdAt: z.string(),
   recipients: z.array(PlayerNameSchema),
   teams: z.array(TeamStateSchema),

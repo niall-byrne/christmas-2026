@@ -20,7 +20,7 @@ describe("Authorization", () => {
     otherGameId: OTHER_GAME_ID,
     cookieName: `${Authorization.SESSION_PREFIX}${GAME_ID}`,
     cookiePrefix: `${Authorization.SESSION_PREFIX}${GAME_ID}=`,
-    gamesUrl: "http://localhost:3000/api/games",
+    gamesUrl: "http://localhost:3000/api/v1/games",
     customMaxAge: 3600,
   } as const
 
