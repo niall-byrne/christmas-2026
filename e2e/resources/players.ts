@@ -4,11 +4,12 @@ import { TEST_FIXTURES } from "@/e2e/resources/fixtures"
 export async function addPlayer(
   context: APIRequestContext,
   gameId: string,
-  teamId: string
+  teamId: string,
+  name = TEST_FIXTURES.player.name
 ) {
   const response = await context.post(
     `/api/v1/games/${gameId}/teams/${teamId}/players`,
-    { data: TEST_FIXTURES.player }
+    { data: { name } }
   )
   expect(response.status()).toBe(201)
   return response.json() as Promise<{ playerId: string }>

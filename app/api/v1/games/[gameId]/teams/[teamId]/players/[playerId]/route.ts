@@ -1,10 +1,10 @@
 import "server-only"
 import type { ApiEndpointInput } from "@/contracts/api"
-import { ApiErrorCode } from "@/contracts/gameData"
-import { ApiRouteError } from "@/lib/api/error/endpoint"
 import { ApiEndpoint } from "@/lib/api/endpoint"
 import { redisKeys } from "@/lib/game/redisKeys"
 import { redisLookupKey } from "@/lib/game/redisLookupKey"
+import { executeGameScript } from "@/lib/game/redisScripts/execute"
+import { removePlayerScript } from "@/lib/game/redisScripts/removePlayer"
 import { RedisClient } from "@/lib/redis/client"
 import { GameParamsSchema } from "@/schemas/gameData/game"
 import { z } from "zod"
@@ -31,26 +31,21 @@ class RemovePlayerEndpoint extends ApiEndpoint<typeof TeamPlayerParamsSchema> {
     const gamePlayersKey = redisKeys.players(params.gameId)
     const teamPlayersKey = redisKeys.teamPlayers(params.gameId, params.teamId)
     const playerNamesKey = redisKeys.playerNames(params.gameId)
+    const playerName = await client.hget(playerKey, "name")
 
-    if ((await client.exists(gameKey)) === 0) {
-      throw new ApiRouteError(ApiErrorCode.GAME_NOT_FOUND, 404)
-    }
-
-    if ((await client.exists(teamKey)) === 0) {
-      throw new ApiRouteError(ApiErrorCode.TEAM_NOT_FOUND, 404)
-    }
-
-    const playerHash = await client.hgetall(playerKey)
-    if (Object.keys(playerHash).length === 0) {
-      throw new ApiRouteError(ApiErrorCode.PLAYER_NOT_FOUND, 404)
-    }
-
-    const entryName = playerHash.name ?? ""
-    await client.srem(gamePlayersKey, params.playerId)
-    await client.srem(teamPlayersKey, params.playerId)
-    await client.srem(playerNamesKey, redisLookupKey(entryName))
-    await client.del(playerKey)
-    await client.hincrby(gameKey, "revision", 1)
+    await executeGameScript(
+      client,
+      removePlayerScript,
+      [
+        gameKey,
+        teamKey,
+        teamPlayersKey,
+        gamePlayersKey,
+        playerNamesKey,
+        playerKey,
+      ],
+      [params.playerId, redisLookupKey(playerName ?? "")]
+    )
 
     return {
       status: 200,

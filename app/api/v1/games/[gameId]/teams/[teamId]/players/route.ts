@@ -1,12 +1,12 @@
 import "server-only"
 import type { ApiEndpointInput } from "@/contracts/api"
-import { ApiErrorCode } from "@/contracts/gameData"
-import { ApiRouteError } from "@/lib/api/error/endpoint"
 import { ApiEndpoint } from "@/lib/api/endpoint"
 import { gameIds } from "@/lib/game/ids"
 import { redisKeys } from "@/lib/game/redisKeys"
-import { RedisClient } from "@/lib/redis/client"
 import { redisLookupKey } from "@/lib/game/redisLookupKey"
+import { addPlayerScript } from "@/lib/game/redisScripts/addPlayer"
+import { executeGameScript } from "@/lib/game/redisScripts/execute"
+import { RedisClient } from "@/lib/redis/client"
 import { GameParamsSchema } from "@/schemas/gameData/game"
 import { AddPlayerBodySchema } from "@/schemas/gameData/player"
 import { z } from "zod"
@@ -37,49 +37,38 @@ class AddPlayerEndpoint extends ApiEndpoint<
     const playerNamesKey = redisKeys.playerNames(params.gameId)
     const playersKey = redisKeys.players(params.gameId)
 
-    if ((await client.exists(gameKey)) === 0) {
-      throw new ApiRouteError(ApiErrorCode.GAME_NOT_FOUND, 404)
-    }
-
-    if ((await client.exists(teamKey)) === 0) {
-      throw new ApiRouteError(ApiErrorCode.TEAM_NOT_FOUND, 404)
-    }
-
-    const normalizedName = redisLookupKey(body.name)
-    const rawCard = await client.hget(cardsKey, normalizedName)
-    if (!rawCard) {
-      throw new ApiRouteError(ApiErrorCode.RECIPIENT_NOT_FOUND, 422)
-    }
-
-    if ((await client.sismember(playerNamesKey, normalizedName)) === 1) {
-      throw new ApiRouteError(ApiErrorCode.NAME_NOT_AVAILABLE, 409)
-    }
-
-    if ((await client.scard(teamPlayersKey)) >= 2) {
-      throw new ApiRouteError(ApiErrorCode.TEAM_FULL, 422)
-    }
-
-    const parsedCard = JSON.parse(rawCard) as {
-      recipient?: string
-      identifier?: string
-    }
     const playerId = gameIds.createEntityId()
     const playerKey = redisKeys.player(params.gameId, params.teamId, playerId)
 
-    await client.hset(playerKey, {
-      name: parsedCard.recipient ?? body.name,
-      ready: "0",
-    })
-    await client.sadd(teamPlayersKey, playerId)
-    await client.sadd(playersKey, playerId)
-    await client.sadd(playerNamesKey, normalizedName)
-    await client.hincrby(gameKey, "revision", 1)
+    const result = await executeGameScript(
+      client,
+      addPlayerScript,
+      [
+        gameKey,
+        teamKey,
+        teamPlayersKey,
+        cardsKey,
+        playerNamesKey,
+        playersKey,
+        playerKey,
+      ],
+      [redisLookupKey(body.name), playerId, body.name]
+    )
+    const [createdPlayerId, name, ready] = result
+
+    if (
+      createdPlayerId !== playerId ||
+      typeof name !== "string" ||
+      ready !== "0"
+    ) {
+      throw new Error("Add-player script returned an unexpected result")
+    }
 
     return {
       status: 201,
       data: {
-        playerId,
-        name: parsedCard.recipient ?? body.name,
+        playerId: createdPlayerId,
+        name,
         ready: false,
       },
     }

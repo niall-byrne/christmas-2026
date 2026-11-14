@@ -6,9 +6,12 @@ import {
 import { createApiContext, type PlaywrightTestHost } from "@/e2e/resources/api"
 import { TEST_FIXTURES } from "@/e2e/resources/fixtures"
 
-export async function createGame(context: APIRequestContext) {
+export async function createGame(
+  context: APIRequestContext,
+  game = TEST_FIXTURES.game
+) {
   const response = await context.post("/api/v1/games", {
-    data: TEST_FIXTURES.game,
+    data: game,
   })
   expect(response.status()).toBe(201)
   return response.json() as Promise<{ gameId: string }>
@@ -32,9 +35,12 @@ export async function captureGameMutation(
   }
 }
 
-export async function createGameSession(playwright: PlaywrightTestHost) {
+export async function createGameSession(
+  playwright: PlaywrightTestHost,
+  game = TEST_FIXTURES.game
+) {
   const session = await createApiContext(playwright)
-  const { gameId } = await createGame(session)
+  const { gameId } = await createGame(session, game)
   const joinResponse = await session.post(`/api/v1/games/${gameId}/join`, {
     data: { password: TEST_FIXTURES.game.password },
   })

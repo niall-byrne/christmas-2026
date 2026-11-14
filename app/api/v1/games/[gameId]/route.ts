@@ -5,6 +5,8 @@ import { ApiRouteError } from "@/lib/api/error/endpoint"
 import { ApiEndpoint } from "@/lib/api/endpoint"
 import { GameState } from "@/lib/game/state"
 import { redisKeys } from "@/lib/game/redisKeys"
+import { executeGameScript } from "@/lib/game/redisScripts/execute"
+import { updateGameScript } from "@/lib/game/redisScripts/updateGame"
 import { RedisClient } from "@/lib/redis/client"
 import { GameParamsSchema, UpdateGameBodySchema } from "@/schemas/gameData/game"
 import { z } from "zod"
@@ -51,23 +53,12 @@ class UpdateGameEndpoint extends ApiEndpoint<
     const client = RedisClient.getClient()
     const gameKey = redisKeys.game(params.gameId)
 
-    const existing = await client.hgetall(gameKey)
-    if (!existing || Object.keys(existing).length === 0) {
-      throw new ApiRouteError(ApiErrorCode.GAME_NOT_FOUND, 404)
-    }
-
-    const nextValues: Record<string, string> = {}
-    if (body.name) {
-      nextValues.name = body.name
-    }
-    if (typeof body.level === "number") {
-      nextValues.level = String(body.level)
-    }
-
-    if (Object.keys(nextValues).length > 0) {
-      await client.hset(gameKey, nextValues)
-      await client.hincrby(gameKey, "revision", 1)
-    }
+    await executeGameScript(
+      client,
+      updateGameScript,
+      [gameKey],
+      [body.name ?? "", body.level === undefined ? "" : String(body.level)]
+    )
 
     const refreshed = await client.hgetall(gameKey)
     const createdAt = refreshed.created_at ?? new Date().toISOString()

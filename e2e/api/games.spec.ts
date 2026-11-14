@@ -12,6 +12,7 @@ import {
   createGameSession,
   readGame,
 } from "@/e2e/resources/games"
+import { deleteGameRecord } from "@/e2e/resources/redis"
 import { TEST_FIXTURES } from "@/e2e/resources/fixtures"
 
 test.describe("Game endpoints", () => {
@@ -319,6 +320,46 @@ test.describe("Game endpoints", () => {
             gameId: scenario.gameId,
             name: "Updated Playwright game",
           })
+        })
+      })
+
+      test("updates the game level", async () => {
+        const activeSession = session
+        if (!activeSession) {
+          throw new Error("Game session was not initialized")
+        }
+
+        const response = await activeSession.patch(
+          `/api/v1/games/${scenario.gameId}`,
+          { data: { level: 1 } }
+        )
+        expect(response.status()).toBe(200)
+        expect(await response.json()).toMatchObject({
+          gameId: scenario.gameId,
+          name: "Updated Playwright game",
+          level: 1,
+        })
+        expect(await readGame(activeSession, scenario.gameId)).toMatchObject({
+          gameId: scenario.gameId,
+          name: "Updated Playwright game",
+          level: 1,
+        })
+      })
+
+      test("returns game not found when the game does not exist", async () => {
+        const activeSession = session
+        if (!activeSession) {
+          throw new Error("Game session was not initialized")
+        }
+        await deleteGameRecord(scenario.gameId)
+
+        const response = await activeSession.patch(
+          `/api/v1/games/${scenario.gameId}`,
+          { data: { name: "Updated Playwright game" } }
+        )
+        expect(response.status()).toBe(404)
+        expect(await response.json()).toMatchObject({
+          error: ApiErrorCode.GAME_NOT_FOUND,
         })
       })
     })

@@ -1,9 +1,9 @@
 import "server-only"
 import type { ApiEndpointInput } from "@/contracts/api"
-import { ApiErrorCode } from "@/contracts/gameData"
-import { ApiRouteError } from "@/lib/api/error/endpoint"
 import { ApiEndpoint } from "@/lib/api/endpoint"
 import { redisKeys } from "@/lib/game/redisKeys"
+import { executeGameScript } from "@/lib/game/redisScripts/execute"
+import { updateTeamScoreScript } from "@/lib/game/redisScripts/updateTeamScore"
 import { RedisClient } from "@/lib/redis/client"
 import { GameParamsSchema } from "@/schemas/gameData/game"
 import { UpdateTeamScoreBodySchema } from "@/schemas/gameData/team"
@@ -31,16 +31,19 @@ class UpdateTeamScoreEndpoint extends ApiEndpoint<
     const gameKey = redisKeys.game(params.gameId)
     const teamKey = redisKeys.team(params.gameId, params.teamId)
 
-    if ((await client.exists(gameKey)) === 0) {
-      throw new ApiRouteError(ApiErrorCode.GAME_NOT_FOUND, 404)
-    }
+    const [score] = await executeGameScript(
+      client,
+      updateTeamScoreScript,
+      [gameKey, teamKey],
+      [String(body.delta)]
+    )
 
-    if ((await client.exists(teamKey)) === 0) {
-      throw new ApiRouteError(ApiErrorCode.TEAM_NOT_FOUND, 404)
+    if (
+      (typeof score !== "number" && typeof score !== "string") ||
+      !Number.isSafeInteger(Number(score))
+    ) {
+      throw new Error("Update-score script returned an unexpected score")
     }
-
-    const score = await client.hincrby(teamKey, "score", body.delta)
-    await client.hincrby(gameKey, "revision", 1)
 
     return {
       status: 200,

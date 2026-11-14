@@ -26,7 +26,7 @@ export const removePlayerScript = `
 
   redis.call("SREM", gamePlayersKey, playerId)
   redis.call("SREM", teamPlayersKey, playerId)
-  redis.call("SREM", playerNamesKey, playerName:lower():gsub("%s+", " "))
+  redis.call("SREM", playerNamesKey, ARGV[2])
   redis.call("DEL", playerKey)
   redis.call("HINCRBY", gameKey, "revision", 1)
 
