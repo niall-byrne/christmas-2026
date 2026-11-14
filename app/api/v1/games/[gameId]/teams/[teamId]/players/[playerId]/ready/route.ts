@@ -1,5 +1,7 @@
 import "server-only"
-import { createEndpoint, ApiRouteError } from "@/lib/api/endpoint"
+import type { ApiEndpointInput } from "@/contracts/api"
+import { ApiRouteError } from "@/lib/api/error/endpoint"
+import { ApiEndpoint } from "@/lib/api/endpoint"
 import { redisKeys } from "@/lib/game/redisKeys"
 import { RedisClient } from "@/lib/redis/client"
 import { GameParamsSchema } from "@/schemas/gameData/game"
@@ -10,10 +12,14 @@ const ReadyParamsSchema = GameParamsSchema.extend({
   playerId: z.string().regex(/^[a-z0-9]{24}$/),
 })
 
-export const POST = createEndpoint({
-  paramsSchema: ReadyParamsSchema,
-  auth: true,
-  handler: async ({ params }) => {
+class MarkPlayerReadyEndpoint extends ApiEndpoint<typeof ReadyParamsSchema> {
+  constructor() {
+    super({ paramsSchema: ReadyParamsSchema, auth: true })
+  }
+
+  protected async execute({
+    params,
+  }: ApiEndpointInput<z.output<typeof ReadyParamsSchema>, unknown>) {
     const client = RedisClient.getClient()
     const gameKey = redisKeys.game(params.gameId)
     const teamKey = redisKeys.team(params.gameId, params.teamId)
@@ -45,13 +51,19 @@ export const POST = createEndpoint({
         ready: true,
       },
     }
-  },
-})
+  }
+}
 
-export const DELETE = createEndpoint({
-  paramsSchema: ReadyParamsSchema,
-  auth: true,
-  handler: async ({ params }) => {
+export const POST = new MarkPlayerReadyEndpoint().handler
+
+class MarkPlayerNotReadyEndpoint extends ApiEndpoint<typeof ReadyParamsSchema> {
+  constructor() {
+    super({ paramsSchema: ReadyParamsSchema, auth: true })
+  }
+
+  protected async execute({
+    params,
+  }: ApiEndpointInput<z.output<typeof ReadyParamsSchema>, unknown>) {
     const client = RedisClient.getClient()
     const gameKey = redisKeys.game(params.gameId)
     const teamKey = redisKeys.team(params.gameId, params.teamId)
@@ -83,5 +95,7 @@ export const DELETE = createEndpoint({
         ready: false,
       },
     }
-  },
-})
+  }
+}
+
+export const DELETE = new MarkPlayerNotReadyEndpoint().handler

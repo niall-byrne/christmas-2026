@@ -1,15 +1,32 @@
 import "server-only"
+import type { ApiEndpointInput } from "@/contracts/api"
 import { Authorization } from "@/lib/api/auth"
-import { createEndpoint, ApiRouteError } from "@/lib/api/endpoint"
+import { ApiRouteError } from "@/lib/api/error/endpoint"
+import { ApiEndpoint } from "@/lib/api/endpoint"
 import { verifyPassword } from "@/lib/game/helpers"
 import { redisKeys } from "@/lib/game/redisKeys"
 import { RedisClient } from "@/lib/redis/client"
 import { GameParamsSchema, JoinGameBodySchema } from "@/schemas/gameData/game"
+import { z } from "zod"
 
-export const POST = createEndpoint({
-  paramsSchema: GameParamsSchema,
-  bodySchema: JoinGameBodySchema,
-  handler: async ({ params, body }) => {
+class JoinGameEndpoint extends ApiEndpoint<
+  typeof GameParamsSchema,
+  typeof JoinGameBodySchema
+> {
+  constructor() {
+    super({
+      paramsSchema: GameParamsSchema,
+      bodySchema: JoinGameBodySchema,
+    })
+  }
+
+  protected async execute({
+    params,
+    body,
+  }: ApiEndpointInput<
+    z.output<typeof GameParamsSchema>,
+    z.output<typeof JoinGameBodySchema>
+  >) {
     const client = RedisClient.getClient()
     const gameKey = redisKeys.game(params.gameId)
     const storedHash = await client.hget(gameKey, "password_hash")
@@ -29,5 +46,7 @@ export const POST = createEndpoint({
         "Set-Cookie": Authorization.responseHeaderFactory(params.gameId),
       },
     }
-  },
-})
+  }
+}
+
+export const POST = new JoinGameEndpoint().handler

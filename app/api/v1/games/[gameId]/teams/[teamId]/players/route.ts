@@ -1,5 +1,7 @@
 import "server-only"
-import { createEndpoint, ApiRouteError } from "@/lib/api/endpoint"
+import type { ApiEndpointInput } from "@/contracts/api"
+import { ApiRouteError } from "@/lib/api/error/endpoint"
+import { ApiEndpoint } from "@/lib/api/endpoint"
 import { createEntityId } from "@/lib/game/helpers"
 import { redisKeys } from "@/lib/game/redisKeys"
 import { RedisClient } from "@/lib/redis/client"
@@ -12,11 +14,25 @@ const TeamPlayersParamsSchema = GameParamsSchema.extend({
   teamId: z.string().regex(/^[a-z0-9]{24}$/),
 })
 
-export const POST = createEndpoint({
-  paramsSchema: TeamPlayersParamsSchema,
-  bodySchema: AddPlayerBodySchema,
-  auth: true,
-  handler: async ({ params, body }) => {
+class AddPlayerEndpoint extends ApiEndpoint<
+  typeof TeamPlayersParamsSchema,
+  typeof AddPlayerBodySchema
+> {
+  constructor() {
+    super({
+      paramsSchema: TeamPlayersParamsSchema,
+      bodySchema: AddPlayerBodySchema,
+      auth: true,
+    })
+  }
+
+  protected async execute({
+    params,
+    body,
+  }: ApiEndpointInput<
+    z.output<typeof TeamPlayersParamsSchema>,
+    z.output<typeof AddPlayerBodySchema>
+  >) {
     const client = RedisClient.getClient()
     const gameKey = redisKeys.game(params.gameId)
     const teamKey = redisKeys.team(params.gameId, params.teamId)
@@ -72,5 +88,7 @@ export const POST = createEndpoint({
         ready: false,
       },
     }
-  },
-})
+  }
+}
+
+export const POST = new AddPlayerEndpoint().handler

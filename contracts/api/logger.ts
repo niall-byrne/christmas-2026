@@ -39,6 +39,20 @@ export interface StructuredApiLogPayload {
   error?: ApiLogErrorPayload
 }
 
+export interface ApiEndpointLogger {
+  write(
+    level: ApiLogLevel,
+    message: string,
+    context?: ApiLogContext
+  ): StructuredApiLogPayload | null
+  info(message: string, context?: ApiLogContext): StructuredApiLogPayload | null
+  warn(message: string, context?: ApiLogContext): StructuredApiLogPayload | null
+  error(
+    message: string,
+    context?: ApiLogContext
+  ): StructuredApiLogPayload | null
+}
+
 export interface ApiLogContext {
   requestId?: string
   http?: ApiLogHttpContext

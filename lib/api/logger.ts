@@ -1,5 +1,6 @@
 import "server-only"
 import type {
+  ApiEndpointLogger,
   ApiLogContext,
   ApiLogErrorPayload,
   ApiLogLevel,
@@ -9,7 +10,7 @@ import type {
 } from "@/contracts/api"
 import { RedisErrorExtractor } from "@/lib/api/error/redis"
 
-export class ApiLogger {
+export class ApiLogger implements ApiEndpointLogger {
   static readonly MISSING_REQUEST_ID = "no-request-id"
   static readonly DEFAULT_SERVICE = "christmas-2026"
   static readonly DEFAULT_ENVIRONMENT = "development"

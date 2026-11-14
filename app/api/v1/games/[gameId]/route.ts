@@ -1,14 +1,22 @@
 import "server-only"
-import { createEndpoint, ApiRouteError } from "@/lib/api/endpoint"
+import type { ApiEndpointInput } from "@/contracts/api"
+import { ApiRouteError } from "@/lib/api/error/endpoint"
+import { ApiEndpoint } from "@/lib/api/endpoint"
 import { GameState } from "@/lib/game/state"
 import { redisKeys } from "@/lib/game/redisKeys"
 import { RedisClient } from "@/lib/redis/client"
 import { GameParamsSchema, UpdateGameBodySchema } from "@/schemas/gameData/game"
+import { z } from "zod"
 
-export const GET = createEndpoint({
-  paramsSchema: GameParamsSchema,
-  auth: true,
-  handler: async ({ params, logger }) => {
+class ReadGameEndpoint extends ApiEndpoint<typeof GameParamsSchema> {
+  constructor() {
+    super({ paramsSchema: GameParamsSchema, auth: true })
+  }
+
+  protected async execute({
+    params,
+    logger,
+  }: ApiEndpointInput<z.output<typeof GameParamsSchema>, unknown>) {
     const state = await new GameState(params.gameId).read()
     if (!state) {
       throw new ApiRouteError("GAME_NOT_FOUND", 404)
@@ -22,14 +30,30 @@ export const GET = createEndpoint({
       status: 200,
       data: state,
     }
-  },
-})
+  }
+}
 
-export const PATCH = createEndpoint({
-  paramsSchema: GameParamsSchema,
-  bodySchema: UpdateGameBodySchema,
-  auth: true,
-  handler: async ({ params, body }) => {
+export const GET = new ReadGameEndpoint().handler
+
+class UpdateGameEndpoint extends ApiEndpoint<
+  typeof GameParamsSchema,
+  typeof UpdateGameBodySchema
+> {
+  constructor() {
+    super({
+      paramsSchema: GameParamsSchema,
+      bodySchema: UpdateGameBodySchema,
+      auth: true,
+    })
+  }
+
+  protected async execute({
+    params,
+    body,
+  }: ApiEndpointInput<
+    z.output<typeof GameParamsSchema>,
+    z.output<typeof UpdateGameBodySchema>
+  >) {
     const client = RedisClient.getClient()
     const gameKey = redisKeys.game(params.gameId)
 
@@ -65,5 +89,7 @@ export const PATCH = createEndpoint({
         createdAt,
       },
     }
-  },
-})
+  }
+}
+
+export const PATCH = new UpdateGameEndpoint().handler

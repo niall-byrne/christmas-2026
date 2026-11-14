@@ -1,17 +1,86 @@
 // @vitest-environment node
 
-import { describe, expect, it, vi, beforeEach, afterEach } from "vitest"
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { z } from "zod"
+import type {
+  ApiEndpointContext,
+  ApiEndpointInput,
+  ApiEndpointOptions,
+} from "@/contracts/api/endpoint"
+import type { ApiEndpointResult } from "@/contracts/api/endpoint"
+import { ApiRouteError } from "@/lib/api/error/endpoint"
 import { Authorization } from "@/lib/api/auth"
-import { createEndpoint } from "@/lib/api/endpoint"
+import { ApiEndpoint } from "@/lib/api/endpoint"
 import { ApiLogger } from "@/lib/api/logger"
 
-const TEST_FIXTURES = {
-  gameId: "a1b2c3d4e5f6g7h8i9j0k1l2",
-  secret: "test-auth-secret",
-} as const
+type TestEndpointOptions<
+  TParams extends z.ZodType,
+  TBody extends z.ZodType,
+  TData,
+> = ApiEndpointOptions<TParams, TBody> & {
+  execute: (
+    input: ApiEndpointInput<z.output<TParams>, z.output<TBody>>
+  ) => Promise<ApiEndpointResult<TData>> | ApiEndpointResult<TData>
+}
 
-describe("createEndpoint", () => {
+class TestApiEndpoint<
+  TParams extends z.ZodType = z.ZodType,
+  TBody extends z.ZodType = z.ZodType,
+  TData = unknown,
+> extends ApiEndpoint<TParams, TBody, TData> {
+  private readonly testExecute: TestEndpointOptions<
+    TParams,
+    TBody,
+    TData
+  >["execute"]
+
+  constructor(options: TestEndpointOptions<TParams, TBody, TData>) {
+    super(options)
+    this.testExecute = options.execute
+  }
+
+  protected execute(
+    input: ApiEndpointInput<z.output<TParams>, z.output<TBody>>
+  ): Promise<ApiEndpointResult<TData>> | ApiEndpointResult<TData> {
+    return this.testExecute(input)
+  }
+}
+
+describe("ApiEndpoint", () => {
+  const TEST_FIXTURES = {
+    gameId: "a1b2c3d4e5f6g7h8i9j0k1l2",
+    secret: "test-auth-secret",
+    url: "http://localhost:3000/api/v1/games",
+    expectedUnauthorized: {
+      message: "Authentication required",
+      error: "UNAUTHORIZED",
+    },
+    expectedInvalidJson: {
+      message: "Invalid JSON body",
+      error: "INVALID_JSON",
+    },
+    expectedInvalidName: {
+      message: "Invalid name",
+      error: "INVALID_GAME_NAME",
+    },
+    expectedInternalError: {
+      message: "Internal server error",
+      error: "INTERNAL_SERVER_ERROR",
+    },
+  } as const
+
+  async function callHandle<
+    TParams extends z.ZodType = z.ZodType,
+    TBody extends z.ZodType = z.ZodType,
+    TData = unknown,
+  >(
+    options: TestEndpointOptions<TParams, TBody, TData>,
+    request: Request,
+    context?: ApiEndpointContext<z.output<TParams>>
+  ): Promise<Response> {
+    return new TestApiEndpoint(options).handler(request, context)
+  }
+
   beforeEach(() => {
     vi.stubEnv("AUTH_SECRET", TEST_FIXTURES.secret)
     vi.stubEnv("LOG_LEVEL", "silent")
@@ -22,122 +91,281 @@ describe("createEndpoint", () => {
     vi.unstubAllEnvs()
   })
 
-  it("executes a JSON response successfully", async () => {
-    const endpoint = createEndpoint({
-      paramsSchema: z.object({ gameId: z.string() }),
-      bodySchema: z.object({ name: z.string() }),
-      auth: true,
-      handler: async ({ params, body }) => ({
-        status: 200,
-        data: { ok: true, gameId: params.gameId, name: body.name },
-      }),
-    })
+  describe("when handler is called with valid JSON and required authentication is present", () => {
+    let response: Response
 
-    const request = new Request("http://localhost:3000/api/v1/games/abc", {
-      method: "POST",
-      headers: {
-        cookie: Authorization.responseHeaderFactory(TEST_FIXTURES.gameId, {
-          secret: TEST_FIXTURES.secret,
+    beforeEach(async () => {
+      response = await callHandle(
+        {
+          paramsSchema: z.object({ gameId: z.string() }),
+          bodySchema: z.object({ name: z.string() }),
+          auth: true,
+          execute: async ({ params, body }) => ({
+            status: 200,
+            data: { ok: true, gameId: params.gameId, name: body.name },
+          }),
+        },
+        new Request(`${TEST_FIXTURES.url}/abc`, {
+          method: "POST",
+          headers: {
+            cookie: Authorization.responseHeaderFactory(TEST_FIXTURES.gameId, {
+              secret: TEST_FIXTURES.secret,
+            }),
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ name: "Demo" }),
         }),
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ name: "Demo" }),
+        { params: { gameId: TEST_FIXTURES.gameId } }
+      )
     })
 
-    const response = await endpoint(request, {
-      params: { gameId: TEST_FIXTURES.gameId },
-    })
-
-    expect(response.status).toBe(200)
-    expect(await response.json()).toEqual({
-      ok: true,
-      gameId: TEST_FIXTURES.gameId,
-      name: "Demo",
+    it("accepts the session cookie and returns the endpoint's JSON result", async () => {
+      expect(response.status).toBe(200)
+      await expect(response.json()).resolves.toEqual({
+        ok: true,
+        gameId: TEST_FIXTURES.gameId,
+        name: "Demo",
+      })
     })
   })
 
-  it("allows raw Response handlers to pass through without wrapping", async () => {
-    const endpoint = createEndpoint({
-      handler: async () => new Response("stream-data", { status: 202 }),
+  describe("when handler is called without requiring authentication or a session cookie", () => {
+    let response: Response
+
+    beforeEach(async () => {
+      response = await callHandle(
+        {
+          auth: false,
+          execute: async () => new Response("stream-data", { status: 202 }),
+        },
+        new Request(`${TEST_FIXTURES.url}/stream`)
+      )
     })
 
-    const response = await endpoint(
-      new Request("http://localhost:3000/api/v1/stream")
-    )
-
-    expect(response.status).toBe(202)
-    expect(await response.text()).toBe("stream-data")
-  })
-
-  it("returns 401 when the session cookie is missing or invalid", async () => {
-    const endpoint = createEndpoint({
-      auth: true,
-      handler: async () => ({ status: 200, data: { ok: true } }),
-    })
-
-    const badRequest = new Request("http://localhost:3000/api/v1/games/nope")
-    const response = await endpoint(badRequest, {
-      params: { gameId: TEST_FIXTURES.gameId },
-    })
-
-    expect(response.status).toBe(401)
-    expect(await response.json()).toEqual({
-      message: "Authentication required",
-      error: "UNAUTHORIZED",
+    it("calls execute and passes its Response through without wrapping it", async () => {
+      expect(response.status).toBe(202)
+      await expect(response.text()).resolves.toBe("stream-data")
     })
   })
 
-  it("returns 400 for malformed JSON and validation violations", async () => {
-    const endpoint = createEndpoint({
-      bodySchema: z.object({ name: z.string({ error: "INVALID_GAME_NAME" }) }),
-      handler: async () => ({ status: 200, data: { ok: true } }),
+  describe("when handler is called with required authentication but no session cookie", () => {
+    let response: Response
+
+    beforeEach(async () => {
+      response = await callHandle(
+        {
+          auth: true,
+          execute: async () => ({ status: 200, data: { ok: true } }),
+        },
+        new Request(`${TEST_FIXTURES.url}/missing`),
+        { params: { gameId: TEST_FIXTURES.gameId } }
+      )
     })
 
-    const badJson = new Request("http://localhost:3000/api/v1/games", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: "{ invalid json }",
-    })
-
-    const badBody = new Request("http://localhost:3000/api/v1/games", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ nope: true }),
-    })
-
-    const malformed = await endpoint(badJson)
-    expect(malformed.status).toBe(400)
-    expect(await malformed.json()).toEqual({
-      message: "Invalid JSON body",
-      error: "INVALID_JSON",
-    })
-
-    const invalid = await endpoint(badBody)
-    expect(invalid.status).toBe(400)
-    expect(await invalid.json()).toEqual({
-      message: "Invalid name",
-      error: "INVALID_GAME_NAME",
+    it("returns an unauthorized error response", async () => {
+      expect(response.status).toBe(401)
+      await expect(response.json()).resolves.toEqual(
+        TEST_FIXTURES.expectedUnauthorized
+      )
     })
   })
 
-  it("returns 500 for unexpected errors and logs them", async () => {
-    const logSpy = vi
-      .spyOn(ApiLogger.prototype, "write")
-      .mockImplementation(() => ({}) as never)
-    const endpoint = createEndpoint({
-      handler: async () => {
-        throw new Error("boom")
-      },
+  describe("when handler is called with a session cookie but authentication is not required", () => {
+    let response: Response
+
+    beforeEach(async () => {
+      response = await callHandle(
+        {
+          auth: false,
+          execute: async () => ({ status: 200, data: { ok: true } }),
+        },
+        new Request(`${TEST_FIXTURES.url}/optional-auth`, {
+          headers: {
+            cookie: Authorization.responseHeaderFactory(TEST_FIXTURES.gameId, {
+              secret: TEST_FIXTURES.secret,
+            }),
+          },
+        })
+      )
     })
 
-    const response = await endpoint(
-      new Request("http://localhost:3000/api/v1/fail")
-    )
-    expect(response.status).toBe(500)
-    expect(await response.json()).toEqual({
-      message: "Internal server error",
-      error: "INTERNAL_SERVER_ERROR",
+    it("calls execute without requiring or rejecting the session cookie", async () => {
+      expect(response.status).toBe(200)
+      await expect(response.json()).resolves.toEqual({ ok: true })
     })
-    expect(logSpy).toHaveBeenCalled()
+  })
+
+  describe("when handler is called and the auth secret is missing", () => {
+    let response: Response
+
+    beforeEach(async () => {
+      vi.stubEnv("AUTH_SECRET", "")
+      response = await callHandle(
+        {
+          auth: true,
+          execute: async () => ({ status: 200, data: { ok: true } }),
+        },
+        new Request(`${TEST_FIXTURES.url}/missing`),
+        { params: { gameId: TEST_FIXTURES.gameId } }
+      )
+    })
+
+    it("returns an internal server error response", async () => {
+      expect(response.status).toBe(500)
+      await expect(response.json()).resolves.toEqual(
+        TEST_FIXTURES.expectedInternalError
+      )
+    })
+  })
+
+  describe("when handler is called with invalid route parameters", () => {
+    let response: Response
+
+    beforeEach(async () => {
+      response = await callHandle(
+        {
+          paramsSchema: z.object({
+            gameId: z.string().regex(/^[a-z0-9]{24}$/, {
+              error: "INVALID_GAME_ID",
+            }),
+          }),
+          execute: async () => ({ status: 200, data: { ok: true } }),
+        },
+        new Request(TEST_FIXTURES.url),
+        { params: { gameId: "invalid" } }
+      )
+    })
+
+    it("returns an invalid game ID error response", async () => {
+      expect(response.status).toBe(400)
+      await expect(response.json()).resolves.toEqual({
+        message: "Invalid game ID",
+        error: "INVALID_GAME_ID",
+      })
+    })
+  })
+
+  describe("when handler is called with malformed JSON", () => {
+    let response: Response
+
+    beforeEach(async () => {
+      response = await callHandle(
+        {
+          bodySchema: z.object({ name: z.string() }),
+          execute: async () => ({ status: 200, data: { ok: true } }),
+        },
+        new Request(TEST_FIXTURES.url, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: "{ invalid json }",
+        })
+      )
+    })
+
+    it("returns an invalid JSON error response", async () => {
+      expect(response.status).toBe(400)
+      await expect(response.json()).resolves.toEqual(
+        TEST_FIXTURES.expectedInvalidJson
+      )
+    })
+  })
+
+  describe("when handler is called with a body that fails schema validation", () => {
+    let response: Response
+
+    beforeEach(async () => {
+      response = await callHandle(
+        {
+          bodySchema: z.object({
+            name: z.string({ error: "INVALID_GAME_NAME" }),
+          }),
+          execute: async () => ({ status: 200, data: { ok: true } }),
+        },
+        new Request(TEST_FIXTURES.url, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ nope: true }),
+        })
+      )
+    })
+
+    it("returns the schema issue as a domain error response", async () => {
+      expect(response.status).toBe(400)
+      await expect(response.json()).resolves.toEqual(
+        TEST_FIXTURES.expectedInvalidName
+      )
+    })
+  })
+
+  describe("when handler calls execute and it throws an API route error", () => {
+    let response: Response
+
+    beforeEach(async () => {
+      response = await callHandle(
+        {
+          execute: async () => {
+            throw new ApiRouteError("GAME_NOT_FOUND", 404)
+          },
+        },
+        new Request(`${TEST_FIXTURES.url}/missing`)
+      )
+    })
+
+    it("returns the route error's status and message", async () => {
+      expect(response.status).toBe(404)
+      await expect(response.json()).resolves.toEqual({
+        message: "Game not found",
+        error: "GAME_NOT_FOUND",
+      })
+    })
+  })
+
+  describe("when handler calls execute and it throws an unexpected error", () => {
+    let response: Response
+    let logSpy: ReturnType<typeof vi.spyOn>
+
+    beforeEach(async () => {
+      logSpy = vi
+        .spyOn(ApiLogger.prototype, "write")
+        .mockImplementation(() => ({}) as never)
+      response = await callHandle(
+        {
+          execute: async () => {
+            throw new Error("boom")
+          },
+        },
+        new Request(`${TEST_FIXTURES.url}/fail`)
+      )
+    })
+
+    it("returns an internal server error response and logs the failure", async () => {
+      expect(response.status).toBe(500)
+      await expect(response.json()).resolves.toEqual(
+        TEST_FIXTURES.expectedInternalError
+      )
+      expect(logSpy).toHaveBeenCalled()
+    })
+  })
+
+  describe("when handler is called and an unexpected error mentions JSON", () => {
+    let response: Response
+
+    beforeEach(async () => {
+      response = await callHandle(
+        {
+          execute: async () => {
+            throw new Error("JSON processing failed")
+          },
+        },
+        new Request(`${TEST_FIXTURES.url}/fail`)
+      )
+    })
+
+    it("returns an internal server error response", async () => {
+      expect(response.status).toBe(500)
+      await expect(response.json()).resolves.toEqual(
+        TEST_FIXTURES.expectedInternalError
+      )
+    })
   })
 })
