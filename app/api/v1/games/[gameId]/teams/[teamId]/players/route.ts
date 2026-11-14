@@ -1,5 +1,6 @@
 import "server-only"
 import type { ApiEndpointInput } from "@/contracts/api"
+import { ApiErrorCode } from "@/contracts/gameData"
 import { ApiRouteError } from "@/lib/api/error/endpoint"
 import { ApiEndpoint } from "@/lib/api/endpoint"
 import { gameIds } from "@/lib/game/ids"
@@ -37,25 +38,25 @@ class AddPlayerEndpoint extends ApiEndpoint<
     const playersKey = redisKeys.players(params.gameId)
 
     if ((await client.exists(gameKey)) === 0) {
-      throw new ApiRouteError("GAME_NOT_FOUND", 404)
+      throw new ApiRouteError(ApiErrorCode.GAME_NOT_FOUND, 404)
     }
 
     if ((await client.exists(teamKey)) === 0) {
-      throw new ApiRouteError("TEAM_NOT_FOUND", 404)
+      throw new ApiRouteError(ApiErrorCode.TEAM_NOT_FOUND, 404)
     }
 
     const normalizedName = redisLookupKey(body.name)
     const rawCard = await client.hget(cardsKey, normalizedName)
     if (!rawCard) {
-      throw new ApiRouteError("RECIPIENT_NOT_FOUND", 422)
+      throw new ApiRouteError(ApiErrorCode.RECIPIENT_NOT_FOUND, 422)
     }
 
     if ((await client.sismember(playerNamesKey, normalizedName)) === 1) {
-      throw new ApiRouteError("NAME_NOT_AVAILABLE", 409)
+      throw new ApiRouteError(ApiErrorCode.NAME_NOT_AVAILABLE, 409)
     }
 
     if ((await client.scard(teamPlayersKey)) >= 2) {
-      throw new ApiRouteError("TEAM_FULL", 422)
+      throw new ApiRouteError(ApiErrorCode.TEAM_FULL, 422)
     }
 
     const parsedCard = JSON.parse(rawCard) as {

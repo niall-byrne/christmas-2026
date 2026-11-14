@@ -12,8 +12,8 @@ describe("schemas/gameData barrel export", () => {
   })
 
   describe("error handling", () => {
-    it("re-exports the error message map", () => {
-      expect(GameDataSchemas.ERROR_MESSAGE_MAP).toBeInstanceOf(Map)
+    it("re-exports the error messages", () => {
+      expect(GameDataSchemas.ERROR_MESSAGES).toBeDefined()
     })
   })
 

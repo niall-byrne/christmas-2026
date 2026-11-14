@@ -1,23 +1,24 @@
 import { z } from "zod"
+import { ApiErrorCode } from "@/contracts/gameData"
 import { GameIdSchema, TeamIdSchema } from "@/schemas/gameData/common"
 
 export const HEX_COLOR_REGEX = /^#[0-9a-fA-F]{6}$/
 
 export const TeamNameSchema = z
-  .string({ error: "INVALID_TEAM_NAME" })
+  .string({ error: ApiErrorCode.INVALID_TEAM_NAME })
   .trim()
-  .min(1, "INVALID_TEAM_NAME")
-  .max(80, "INVALID_TEAM_NAME")
+  .min(1, ApiErrorCode.INVALID_TEAM_NAME)
+  .max(80, ApiErrorCode.INVALID_TEAM_NAME)
 
 export const TeamColorSchema = z
-  .string({ error: "INVALID_TEAM_COLOUR" })
+  .string({ error: ApiErrorCode.INVALID_TEAM_COLOUR })
   .trim()
-  .regex(HEX_COLOR_REGEX, "INVALID_TEAM_COLOUR")
+  .regex(HEX_COLOR_REGEX, ApiErrorCode.INVALID_TEAM_COLOUR)
   .transform((val) => val.toLowerCase())
 
 export const ScoreDeltaSchema = z
-  .number({ error: "INVALID_SCORE_DELTA" })
-  .int("INVALID_SCORE_DELTA")
+  .number({ error: ApiErrorCode.INVALID_SCORE_DELTA })
+  .int(ApiErrorCode.INVALID_SCORE_DELTA)
 
 export const CreateTeamBodySchema = z.object({
   name: TeamNameSchema,

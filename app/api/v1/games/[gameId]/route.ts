@@ -1,5 +1,6 @@
 import "server-only"
 import type { ApiEndpointInput } from "@/contracts/api"
+import { ApiErrorCode } from "@/contracts/gameData"
 import { ApiRouteError } from "@/lib/api/error/endpoint"
 import { ApiEndpoint } from "@/lib/api/endpoint"
 import { GameState } from "@/lib/game/state"
@@ -17,7 +18,7 @@ class ReadGameEndpoint extends ApiEndpoint<typeof GameParamsSchema> {
   }: ApiEndpointInput<z.output<typeof GameParamsSchema>, unknown>) {
     const state = await new GameState(params.gameId).read()
     if (!state) {
-      throw new ApiRouteError("GAME_NOT_FOUND", 404)
+      throw new ApiRouteError(ApiErrorCode.GAME_NOT_FOUND, 404)
     }
 
     logger.info("Loaded game snapshot", {
@@ -52,7 +53,7 @@ class UpdateGameEndpoint extends ApiEndpoint<
 
     const existing = await client.hgetall(gameKey)
     if (!existing || Object.keys(existing).length === 0) {
-      throw new ApiRouteError("GAME_NOT_FOUND", 404)
+      throw new ApiRouteError(ApiErrorCode.GAME_NOT_FOUND, 404)
     }
 
     const nextValues: Record<string, string> = {}

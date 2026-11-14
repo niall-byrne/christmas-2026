@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest"
+import { ApiErrorCode } from "@/contracts/gameData"
 import {
   HEX_COLOR_REGEX,
   TeamNameSchema,
@@ -46,7 +47,9 @@ describe("team schemas", () => {
       const result = TeamNameSchema.safeParse(input)
       expect(result.success).toBe(false)
       if (!result.success) {
-        expect(result.error.issues[0]?.message).toBe("INVALID_TEAM_NAME")
+        expect(result.error.issues[0]?.message).toBe(
+          ApiErrorCode.INVALID_TEAM_NAME
+        )
       }
     })
   })
@@ -73,7 +76,9 @@ describe("team schemas", () => {
       const result = TeamColorSchema.safeParse(input)
       expect(result.success).toBe(false)
       if (!result.success) {
-        expect(result.error.issues[0]?.message).toBe("INVALID_TEAM_COLOUR")
+        expect(result.error.issues[0]?.message).toBe(
+          ApiErrorCode.INVALID_TEAM_COLOUR
+        )
       }
     })
   })
@@ -92,7 +97,9 @@ describe("team schemas", () => {
       const result = ScoreDeltaSchema.safeParse(input)
       expect(result.success).toBe(false)
       if (!result.success) {
-        expect(result.error.issues[0]?.message).toBe("INVALID_SCORE_DELTA")
+        expect(result.error.issues[0]?.message).toBe(
+          ApiErrorCode.INVALID_SCORE_DELTA
+        )
       }
     })
   })
@@ -134,7 +141,9 @@ describe("team schemas", () => {
       })
       expect(invalidTeam.success).toBe(false)
       if (!invalidTeam.success) {
-        expect(invalidTeam.error.issues[0]?.message).toBe("INVALID_TEAM_ID")
+        expect(invalidTeam.error.issues[0]?.message).toBe(
+          ApiErrorCode.INVALID_TEAM_ID
+        )
       }
     })
   })

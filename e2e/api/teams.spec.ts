@@ -1,5 +1,6 @@
 import { expect, test } from "@/e2e/resources/test"
 import type { APIRequestContext } from "@playwright/test"
+import { ApiErrorCode } from "@/contracts/gameData"
 import {
   captureResponse,
   createApiContext,
@@ -37,7 +38,9 @@ test.describe("Team endpoints", () => {
 
       test("returns 401", () => {
         expect(scenario.status).toBe(401)
-        expect(scenario.body).toMatchObject({ error: "UNAUTHORIZED" })
+        expect(scenario.body).toMatchObject({
+          error: ApiErrorCode.UNAUTHORIZED,
+        })
       })
     })
 
@@ -133,7 +136,9 @@ test.describe("Team endpoints", () => {
 
       test("returns 401", () => {
         expect(scenario.status).toBe(401)
-        expect(scenario.body).toMatchObject({ error: "UNAUTHORIZED" })
+        expect(scenario.body).toMatchObject({
+          error: ApiErrorCode.UNAUTHORIZED,
+        })
       })
     })
 

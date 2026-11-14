@@ -1,9 +1,9 @@
 import type { AuthorizationErrorReason } from "@/contracts/api"
-import type { ApiErrorCode } from "@/contracts/gameData"
-import { ERROR_MESSAGE_MAP } from "@/schemas/gameData"
+import { ApiErrorCode } from "@/contracts/gameData"
+import { ERROR_MESSAGES } from "@/schemas/gameData"
 
 export class MissingAuthSecretError extends Error {
-  readonly code: ApiErrorCode = "INTERNAL_SERVER_ERROR"
+  readonly code: ApiErrorCode = ApiErrorCode.INTERNAL_SERVER_ERROR
   readonly reason = "MISSING_AUTH_SECRET" as const
   readonly statusCode = 500
 
@@ -15,13 +15,13 @@ export class MissingAuthSecretError extends Error {
 }
 
 export class AuthorizationError extends Error {
-  readonly code: ApiErrorCode = "UNAUTHORIZED"
+  readonly code: ApiErrorCode = ApiErrorCode.UNAUTHORIZED
   readonly statusCode = 401
   readonly reason: AuthorizationErrorReason
 
   constructor(
     reason: AuthorizationErrorReason,
-    message = ERROR_MESSAGE_MAP.get("UNAUTHORIZED") ?? "Authentication required"
+    message = ERROR_MESSAGES[ApiErrorCode.UNAUTHORIZED]
   ) {
     super(message)
     this.name = "AuthorizationError"

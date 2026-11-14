@@ -2,11 +2,12 @@
 
 import { describe, it, expect, beforeEach } from "vitest"
 import type { AuthorizationErrorReason } from "@/contracts/api"
+import { ApiErrorCode } from "@/contracts/gameData"
 import {
   AuthorizationError,
   MissingAuthSecretError,
 } from "@/lib/api/error/auth"
-import { ERROR_MESSAGE_MAP } from "@/schemas/gameData"
+import { ERROR_MESSAGES } from "@/schemas/gameData"
 
 describe("auth error classes", () => {
   describe("MissingAuthSecretError", () => {
@@ -21,7 +22,7 @@ describe("auth error classes", () => {
         expect(error).toBeInstanceOf(Error)
         expect(error).toBeInstanceOf(MissingAuthSecretError)
         expect(error.name).toBe("MissingAuthSecretError")
-        expect(error.code).toBe("INTERNAL_SERVER_ERROR")
+        expect(error.code).toBe(ApiErrorCode.INTERNAL_SERVER_ERROR)
         expect(error.reason).toBe("MISSING_AUTH_SECRET")
         expect(error.statusCode).toBe(500)
         expect(error.message).toBe(
@@ -60,10 +61,10 @@ describe("auth error classes", () => {
         expect(error).toBeInstanceOf(Error)
         expect(error).toBeInstanceOf(AuthorizationError)
         expect(error.name).toBe("AuthorizationError")
-        expect(error.code).toBe("UNAUTHORIZED")
+        expect(error.code).toBe(ApiErrorCode.UNAUTHORIZED)
         expect(error.statusCode).toBe(401)
         expect(error.reason).toBe(reason)
-        expect(error.message).toBe(ERROR_MESSAGE_MAP.get("UNAUTHORIZED"))
+        expect(error.message).toBe(ERROR_MESSAGES[ApiErrorCode.UNAUTHORIZED])
       })
     })
 

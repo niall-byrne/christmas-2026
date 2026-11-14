@@ -1,5 +1,6 @@
 import { expect, test } from "@/e2e/resources/test"
 import type { APIRequestContext } from "@playwright/test"
+import { ApiErrorCode } from "@/contracts/gameData"
 import {
   captureResponse,
   createApiContext,
@@ -91,7 +92,7 @@ test.describe("Game endpoints", () => {
         test("rejects an empty card list", () => {
           expect(scenario.responseStatus).toBe(400)
           expect(scenario.responseBody).toMatchObject({
-            error: "INVALID_GAME_CARDS",
+            error: ApiErrorCode.INVALID_GAME_CARDS,
           })
         })
       })
@@ -174,7 +175,7 @@ test.describe("Game endpoints", () => {
         test("returns an incorrect-password response", () => {
           expect(scenario.responseStatus).toBe(401)
           expect(scenario.responseBody).toMatchObject({
-            error: "INCORRECT_GAME_PASSWORD",
+            error: ApiErrorCode.INCORRECT_GAME_PASSWORD,
           })
         })
       })
@@ -207,7 +208,9 @@ test.describe("Game endpoints", () => {
 
       test("returns 401", () => {
         expect(scenario.status).toBe(401)
-        expect(scenario.body).toMatchObject({ error: "UNAUTHORIZED" })
+        expect(scenario.body).toMatchObject({
+          error: ApiErrorCode.UNAUTHORIZED,
+        })
       })
     })
 
@@ -270,7 +273,9 @@ test.describe("Game endpoints", () => {
 
       test("returns 401", () => {
         expect(scenario.status).toBe(401)
-        expect(scenario.body).toMatchObject({ error: "UNAUTHORIZED" })
+        expect(scenario.body).toMatchObject({
+          error: ApiErrorCode.UNAUTHORIZED,
+        })
       })
     })
 

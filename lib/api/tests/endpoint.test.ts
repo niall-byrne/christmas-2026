@@ -2,6 +2,7 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { z } from "zod"
+import { ApiErrorCode } from "@/contracts/gameData"
 import type {
   ApiEndpointContext,
   ApiEndpointInput,
@@ -62,19 +63,19 @@ describe("ApiEndpoint", () => {
     url: "http://localhost:3000/api/v1/games",
     expectedUnauthorized: {
       message: "Authentication required",
-      error: "UNAUTHORIZED",
+      error: ApiErrorCode.UNAUTHORIZED,
     },
     expectedInvalidJson: {
       message: "Invalid JSON body",
-      error: "INVALID_JSON",
+      error: ApiErrorCode.INVALID_JSON,
     },
     expectedInvalidName: {
       message: "Invalid name",
-      error: "INVALID_GAME_NAME",
+      error: ApiErrorCode.INVALID_GAME_NAME,
     },
     expectedInternalError: {
       message: "Internal server error",
-      error: "INTERNAL_SERVER_ERROR",
+      error: ApiErrorCode.INTERNAL_SERVER_ERROR,
     },
   } as const
 
@@ -232,7 +233,7 @@ describe("ApiEndpoint", () => {
         {
           paramsSchema: z.object({
             gameId: z.string().regex(/^[a-z0-9]{24}$/, {
-              error: "INVALID_GAME_ID",
+              error: ApiErrorCode.INVALID_GAME_ID,
             }),
           }),
           requiresAuth: false,
@@ -247,7 +248,7 @@ describe("ApiEndpoint", () => {
       expect(response.status).toBe(400)
       await expect(response.json()).resolves.toEqual({
         message: "Invalid game ID",
-        error: "INVALID_GAME_ID",
+        error: ApiErrorCode.INVALID_GAME_ID,
       })
     })
   })
@@ -285,7 +286,7 @@ describe("ApiEndpoint", () => {
       response = await callHandle(
         {
           bodySchema: z.object({
-            name: z.string({ error: "INVALID_GAME_NAME" }),
+            name: z.string({ error: ApiErrorCode.INVALID_GAME_NAME }),
           }),
           requiresAuth: false,
           execute: async () => ({ status: 200, data: { ok: true } }),
@@ -314,7 +315,7 @@ describe("ApiEndpoint", () => {
         {
           requiresAuth: false,
           execute: async () => {
-            throw new ApiRouteError("GAME_NOT_FOUND", 404)
+            throw new ApiRouteError(ApiErrorCode.GAME_NOT_FOUND, 404)
           },
         },
         new Request(`${TEST_FIXTURES.url}/missing`)
@@ -325,7 +326,7 @@ describe("ApiEndpoint", () => {
       expect(response.status).toBe(404)
       await expect(response.json()).resolves.toEqual({
         message: "Game not found",
-        error: "GAME_NOT_FOUND",
+        error: ApiErrorCode.GAME_NOT_FOUND,
       })
     })
   })

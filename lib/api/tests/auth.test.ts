@@ -3,6 +3,7 @@
 import { createHmac } from "node:crypto"
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
 import type { AuthorizationErrorReason } from "@/contracts/api"
+import { ApiErrorCode } from "@/contracts/gameData"
 import { Authorization } from "@/lib/api/auth"
 import {
   AuthorizationError,
@@ -298,7 +299,7 @@ describe("Authorization", () => {
           it("throws AuthorizationError with the expected reason and 401 status", () => {
             expect(thrown).toBeInstanceOf(AuthorizationError)
             expect(thrown).toMatchObject({
-              code: "UNAUTHORIZED",
+              code: ApiErrorCode.UNAUTHORIZED,
               statusCode: 401,
               reason: expectedReason,
             })

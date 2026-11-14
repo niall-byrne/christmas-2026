@@ -1,5 +1,6 @@
 import "server-only"
 import type { ApiEndpointInput } from "@/contracts/api"
+import { ApiErrorCode } from "@/contracts/gameData"
 import { ApiRouteError } from "@/lib/api/error/endpoint"
 import { ApiEndpoint } from "@/lib/api/endpoint"
 import { gameIds } from "@/lib/game/ids"
@@ -29,7 +30,7 @@ class CreateTeamEndpoint extends ApiEndpoint<
 
     const gameExists = await client.exists(gameKey)
     if (gameExists === 0) {
-      throw new ApiRouteError("GAME_NOT_FOUND", 404)
+      throw new ApiRouteError(ApiErrorCode.GAME_NOT_FOUND, 404)
     }
 
     const normalizedName = redisLookupKey(body.name)
@@ -40,11 +41,11 @@ class CreateTeamEndpoint extends ApiEndpoint<
     const teamKey = redisKeys.team(params.gameId, teamId)
 
     if ((await client.sismember(teamNamesKey, normalizedName)) === 1) {
-      throw new ApiRouteError("TEAM_NAME_NOT_AVAILABLE", 409)
+      throw new ApiRouteError(ApiErrorCode.TEAM_NAME_NOT_AVAILABLE, 409)
     }
 
     if ((await client.sismember(teamColorsKey, normalizedColor)) === 1) {
-      throw new ApiRouteError("TEAM_COLOUR_NOT_AVAILABLE", 409)
+      throw new ApiRouteError(ApiErrorCode.TEAM_COLOUR_NOT_AVAILABLE, 409)
     }
 
     await client.hset(teamKey, {
