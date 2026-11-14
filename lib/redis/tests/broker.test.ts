@@ -161,6 +161,10 @@ describe("RedisBroker", () => {
         await Promise.resolve()
       })
 
+      afterEach(() => {
+        abortController?.abort()
+      })
+
       it("duplicates the shared client, attaches an error listener, and subscribes to the channel", () => {
         expect(response.headers.get("Content-Type")).toBe("text/event-stream")
         expect(subscriber.listenerCount("error")).toBeGreaterThanOrEqual(1)
@@ -194,6 +198,25 @@ describe("RedisBroker", () => {
           )
           expect(subscriber.disconnect).toHaveBeenCalledTimes(1)
         })
+      })
+    })
+
+    describe("when a client cancels the response body", () => {
+      let subscriber: MockRedis
+
+      beforeEach(async () => {
+        const req = new NextRequest(TEST_FIXTURES.streamUrl)
+        const response = broker.createStreamResponse(channel, req, 60_000)
+        subscriber = mockClient.duplicates[0]
+        await Promise.resolve()
+        await response.body?.cancel()
+      })
+
+      it("unsubscribes and disconnects the duplicated subscriber", () => {
+        expect(subscriber.unsubscribe).toHaveBeenCalledWith(
+          TEST_FIXTURES.channelName
+        )
+        expect(subscriber.disconnect).toHaveBeenCalledTimes(1)
       })
     })
 

@@ -1,6 +1,6 @@
 import "server-only"
 import type { ApiEndpointInput } from "@/contracts/api"
-import { ApiErrorCode } from "@/contracts/gameData"
+import { ApiErrorCode, GAME_COMPLETE_TTL_SECONDS } from "@/contracts/gameData"
 import { ApiRouteError } from "@/lib/api/error/endpoint"
 import { ApiEndpoint } from "@/lib/api/endpoint"
 import { GameState } from "@/lib/game/state"
@@ -56,8 +56,15 @@ class UpdateGameEndpoint extends ApiEndpoint<
     await executeGameScript(
       client,
       updateGameScript,
-      [gameKey],
-      [body.name ?? "", body.level === undefined ? "" : String(body.level)]
+      redisKeys.gameExpirationKeys(params.gameId),
+      [
+        body.name ?? "",
+        body.level === undefined ? "" : String(body.level),
+        String(GAME_COMPLETE_TTL_SECONDS),
+        redisKeys.teamPrefix(params.gameId),
+        redisKeys.teamPlayersSuffix,
+        redisKeys.playerKeyPrefixSuffix,
+      ]
     )
 
     const refreshed = await client.hgetall(gameKey)

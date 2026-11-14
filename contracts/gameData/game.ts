@@ -8,6 +8,7 @@ type LessThan<
 
 export const GAME_LOBBY_LEVEL = 0 as const
 export const GAME_COMPLETE_LEVEL = 5 as const
+export const GAME_COMPLETE_TTL_SECONDS = 86_400 as const
 
 export type ActiveGameLevel = LessThan<typeof GAME_COMPLETE_LEVEL>
 export type CompletedGameLevel = typeof GAME_COMPLETE_LEVEL
