@@ -1,6 +1,6 @@
 import "server-only"
 import { createEndpoint, ApiRouteError } from "@/lib/api/endpoint"
-import { getGameSnapshot } from "@/lib/game/snapshot"
+import { GameState } from "@/lib/game/state"
 import { redisKeys } from "@/lib/game/redisKeys"
 import { RedisClient } from "@/lib/redis/client"
 import { GameParamsSchema, UpdateGameBodySchema } from "@/schemas/gameData/game"
@@ -9,8 +9,8 @@ export const GET = createEndpoint({
   paramsSchema: GameParamsSchema,
   auth: true,
   handler: async ({ params, logger }) => {
-    const snapshot = await getGameSnapshot(params.gameId)
-    if (!snapshot) {
+    const state = await new GameState(params.gameId).read()
+    if (!state) {
       throw new ApiRouteError("GAME_NOT_FOUND", 404)
     }
 
@@ -20,7 +20,7 @@ export const GET = createEndpoint({
 
     return {
       status: 200,
-      data: snapshot,
+      data: state,
     }
   },
 })
