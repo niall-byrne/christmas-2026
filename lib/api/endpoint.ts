@@ -20,7 +20,7 @@ export abstract class ApiEndpoint<
   protected bodySchema?: TBody
   protected requiresAuth = true
 
-  protected createErrorResponse(
+  private createErrorResponse(
     error: ApiErrorCode,
     statusCode: number,
     message = ERROR_MESSAGE_MAP.get(error) ?? "Request failed"
@@ -28,7 +28,7 @@ export abstract class ApiEndpoint<
     return Response.json({ message, error }, { status: statusCode })
   }
 
-  protected async parseBody(
+  private async parseBody(
     request: Request
   ): Promise<z.output<TBody> | undefined> {
     const schema = this.bodySchema
@@ -57,7 +57,7 @@ export abstract class ApiEndpoint<
     return parsed.data
   }
 
-  protected resolveRequestIds(params: unknown): Record<string, string> {
+  private resolveRequestIds(params: unknown): Record<string, string> {
     if (!params || typeof params !== "object") {
       return {}
     }
@@ -73,7 +73,7 @@ export abstract class ApiEndpoint<
     return ids
   }
 
-  protected createJsonResponse(
+  private createJsonResponse(
     result: Exclude<ApiEndpointResult<TData>, Response>
   ): Response {
     return Response.json(result.data ?? null, {
@@ -132,7 +132,7 @@ export abstract class ApiEndpoint<
     }
   }
 
-  protected parseParams(params: unknown): z.output<TParams> {
+  private parseParams(params: unknown): z.output<TParams> {
     const schema = this.paramsSchema
     if (!schema) {
       return undefined as z.output<TParams>
@@ -146,7 +146,7 @@ export abstract class ApiEndpoint<
     return parsed.data
   }
 
-  protected authorize(request: Request, params: unknown): void {
+  private authorize(request: Request, params: unknown): void {
     if (!this.requiresAuth) {
       return
     }
@@ -162,7 +162,7 @@ export abstract class ApiEndpoint<
     })
   }
 
-  protected handleError(
+  private handleError(
     error: unknown,
     request: Request,
     requestIds: Record<string, string>,
@@ -201,7 +201,7 @@ export abstract class ApiEndpoint<
     return this.createErrorResponse("INTERNAL_SERVER_ERROR", 500)
   }
 
-  protected getHttpContext(
+  private getHttpContext(
     request: Request,
     statusCode: number,
     startedAt: number
