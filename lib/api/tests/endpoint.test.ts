@@ -5,9 +5,8 @@ import { z } from "zod"
 import type {
   ApiEndpointContext,
   ApiEndpointInput,
-  ApiEndpointOptions,
+  ApiEndpointResult,
 } from "@/contracts/api/endpoint"
-import type { ApiEndpointResult } from "@/contracts/api/endpoint"
 import { ApiRouteError } from "@/lib/api/error/endpoint"
 import { Authorization } from "@/lib/api/auth"
 import { ApiEndpoint } from "@/lib/api/endpoint"
@@ -17,7 +16,10 @@ type TestEndpointOptions<
   TParams extends z.ZodType,
   TBody extends z.ZodType,
   TData,
-> = ApiEndpointOptions<TParams, TBody> & {
+> = {
+  paramsSchema?: TParams
+  bodySchema?: TBody
+  requiresAuth?: boolean
   execute: (
     input: ApiEndpointInput<z.output<TParams>, z.output<TBody>>
   ) => Promise<ApiEndpointResult<TData>> | ApiEndpointResult<TData>
@@ -28,6 +30,10 @@ class TestApiEndpoint<
   TBody extends z.ZodType = z.ZodType,
   TData = unknown,
 > extends ApiEndpoint<TParams, TBody, TData> {
+  protected override paramsSchema?: TParams
+  protected override bodySchema?: TBody
+  protected override requiresAuth: boolean
+
   private readonly testExecute: TestEndpointOptions<
     TParams,
     TBody,
@@ -35,7 +41,10 @@ class TestApiEndpoint<
   >["execute"]
 
   constructor(options: TestEndpointOptions<TParams, TBody, TData>) {
-    super(options)
+    super()
+    this.paramsSchema = options.paramsSchema
+    this.bodySchema = options.bodySchema
+    this.requiresAuth = options.requiresAuth ?? true
     this.testExecute = options.execute
   }
 
@@ -78,7 +87,7 @@ describe("ApiEndpoint", () => {
     request: Request,
     context?: ApiEndpointContext<z.output<TParams>>
   ): Promise<Response> {
-    return new TestApiEndpoint(options).handler(request, context)
+    return new TestApiEndpoint(options).handle(request, context)
   }
 
   beforeEach(() => {
@@ -91,7 +100,7 @@ describe("ApiEndpoint", () => {
     vi.unstubAllEnvs()
   })
 
-  describe("when handler is called with valid JSON and required authentication is present", () => {
+  describe("when ApiEndpoint.handle is called with valid JSON and required authentication is present", () => {
     let response: Response
 
     beforeEach(async () => {
@@ -99,7 +108,6 @@ describe("ApiEndpoint", () => {
         {
           paramsSchema: z.object({ gameId: z.string() }),
           bodySchema: z.object({ name: z.string() }),
-          auth: true,
           execute: async ({ params, body }) => ({
             status: 200,
             data: { ok: true, gameId: params.gameId, name: body.name },
@@ -129,13 +137,13 @@ describe("ApiEndpoint", () => {
     })
   })
 
-  describe("when handler is called without requiring authentication or a session cookie", () => {
+  describe("when ApiEndpoint.handle is called without requiring authentication or a session cookie", () => {
     let response: Response
 
     beforeEach(async () => {
       response = await callHandle(
         {
-          auth: false,
+          requiresAuth: false,
           execute: async () => new Response("stream-data", { status: 202 }),
         },
         new Request(`${TEST_FIXTURES.url}/stream`)
@@ -148,13 +156,12 @@ describe("ApiEndpoint", () => {
     })
   })
 
-  describe("when handler is called with required authentication but no session cookie", () => {
+  describe("when ApiEndpoint.handle is called with required authentication but no session cookie", () => {
     let response: Response
 
     beforeEach(async () => {
       response = await callHandle(
         {
-          auth: true,
           execute: async () => ({ status: 200, data: { ok: true } }),
         },
         new Request(`${TEST_FIXTURES.url}/missing`),
@@ -170,13 +177,13 @@ describe("ApiEndpoint", () => {
     })
   })
 
-  describe("when handler is called with a session cookie but authentication is not required", () => {
+  describe("when ApiEndpoint.handle is called with a session cookie but authentication is not required", () => {
     let response: Response
 
     beforeEach(async () => {
       response = await callHandle(
         {
-          auth: false,
+          requiresAuth: false,
           execute: async () => ({ status: 200, data: { ok: true } }),
         },
         new Request(`${TEST_FIXTURES.url}/optional-auth`, {
@@ -195,14 +202,13 @@ describe("ApiEndpoint", () => {
     })
   })
 
-  describe("when handler is called and the auth secret is missing", () => {
+  describe("when ApiEndpoint.handle is called and the auth secret is missing", () => {
     let response: Response
 
     beforeEach(async () => {
       vi.stubEnv("AUTH_SECRET", "")
       response = await callHandle(
         {
-          auth: true,
           execute: async () => ({ status: 200, data: { ok: true } }),
         },
         new Request(`${TEST_FIXTURES.url}/missing`),
@@ -218,7 +224,7 @@ describe("ApiEndpoint", () => {
     })
   })
 
-  describe("when handler is called with invalid route parameters", () => {
+  describe("when ApiEndpoint.handle is called with invalid route parameters", () => {
     let response: Response
 
     beforeEach(async () => {
@@ -229,6 +235,7 @@ describe("ApiEndpoint", () => {
               error: "INVALID_GAME_ID",
             }),
           }),
+          requiresAuth: false,
           execute: async () => ({ status: 200, data: { ok: true } }),
         },
         new Request(TEST_FIXTURES.url),
@@ -245,13 +252,14 @@ describe("ApiEndpoint", () => {
     })
   })
 
-  describe("when handler is called with malformed JSON", () => {
+  describe("when ApiEndpoint.handle is called with malformed JSON", () => {
     let response: Response
 
     beforeEach(async () => {
       response = await callHandle(
         {
           bodySchema: z.object({ name: z.string() }),
+          requiresAuth: false,
           execute: async () => ({ status: 200, data: { ok: true } }),
         },
         new Request(TEST_FIXTURES.url, {
@@ -270,7 +278,7 @@ describe("ApiEndpoint", () => {
     })
   })
 
-  describe("when handler is called with a body that fails schema validation", () => {
+  describe("when ApiEndpoint.handle is called with a body that fails schema validation", () => {
     let response: Response
 
     beforeEach(async () => {
@@ -279,6 +287,7 @@ describe("ApiEndpoint", () => {
           bodySchema: z.object({
             name: z.string({ error: "INVALID_GAME_NAME" }),
           }),
+          requiresAuth: false,
           execute: async () => ({ status: 200, data: { ok: true } }),
         },
         new Request(TEST_FIXTURES.url, {
@@ -297,12 +306,13 @@ describe("ApiEndpoint", () => {
     })
   })
 
-  describe("when handler calls execute and it throws an API route error", () => {
+  describe("when ApiEndpoint.handle calls execute and it throws an API route error", () => {
     let response: Response
 
     beforeEach(async () => {
       response = await callHandle(
         {
+          requiresAuth: false,
           execute: async () => {
             throw new ApiRouteError("GAME_NOT_FOUND", 404)
           },
@@ -320,7 +330,7 @@ describe("ApiEndpoint", () => {
     })
   })
 
-  describe("when handler calls execute and it throws an unexpected error", () => {
+  describe("when ApiEndpoint.handle calls execute and it throws an unexpected error", () => {
     let response: Response
     let logSpy: ReturnType<typeof vi.spyOn>
 
@@ -330,6 +340,7 @@ describe("ApiEndpoint", () => {
         .mockImplementation(() => ({}) as never)
       response = await callHandle(
         {
+          requiresAuth: false,
           execute: async () => {
             throw new Error("boom")
           },
@@ -347,12 +358,13 @@ describe("ApiEndpoint", () => {
     })
   })
 
-  describe("when handler is called and an unexpected error mentions JSON", () => {
+  describe("when ApiEndpoint.handle is called and an unexpected error mentions JSON", () => {
     let response: Response
 
     beforeEach(async () => {
       response = await callHandle(
         {
+          requiresAuth: false,
           execute: async () => {
             throw new Error("JSON processing failed")
           },

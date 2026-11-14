@@ -3,7 +3,7 @@ import type { ApiEndpointInput } from "@/contracts/api"
 import { Authorization } from "@/lib/api/auth"
 import { ApiRouteError } from "@/lib/api/error/endpoint"
 import { ApiEndpoint } from "@/lib/api/endpoint"
-import { verifyPassword } from "@/lib/game/helpers"
+import { gamePasswords } from "@/lib/game/password"
 import { redisKeys } from "@/lib/game/redisKeys"
 import { RedisClient } from "@/lib/redis/client"
 import { GameParamsSchema, JoinGameBodySchema } from "@/schemas/gameData/game"
@@ -13,12 +13,9 @@ class JoinGameEndpoint extends ApiEndpoint<
   typeof GameParamsSchema,
   typeof JoinGameBodySchema
 > {
-  constructor() {
-    super({
-      paramsSchema: GameParamsSchema,
-      bodySchema: JoinGameBodySchema,
-    })
-  }
+  protected override paramsSchema = GameParamsSchema
+  protected override bodySchema = JoinGameBodySchema
+  protected override requiresAuth = false
 
   protected async execute({
     params,
@@ -35,7 +32,7 @@ class JoinGameEndpoint extends ApiEndpoint<
       throw new ApiRouteError("GAME_NOT_FOUND", 404)
     }
 
-    if (!verifyPassword(body.password, storedHash)) {
+    if (!gamePasswords.verify(body.password, storedHash)) {
       throw new ApiRouteError("INCORRECT_GAME_PASSWORD", 401)
     }
 
@@ -49,4 +46,4 @@ class JoinGameEndpoint extends ApiEndpoint<
   }
 }
 
-export const POST = new JoinGameEndpoint().handler
+export const POST = new JoinGameEndpoint().handle

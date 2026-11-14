@@ -3,6 +3,7 @@ import type { ApiEndpointInput } from "@/contracts/api"
 import { ApiRouteError } from "@/lib/api/error/endpoint"
 import { ApiEndpoint } from "@/lib/api/endpoint"
 import { redisKeys } from "@/lib/game/redisKeys"
+import { redisLookupKey } from "@/lib/game/redisLookupKey"
 import { RedisClient } from "@/lib/redis/client"
 import { GameParamsSchema } from "@/schemas/gameData/game"
 import { z } from "zod"
@@ -13,9 +14,7 @@ const TeamPlayerParamsSchema = GameParamsSchema.extend({
 })
 
 class RemovePlayerEndpoint extends ApiEndpoint<typeof TeamPlayerParamsSchema> {
-  constructor() {
-    super({ paramsSchema: TeamPlayerParamsSchema, auth: true })
-  }
+  protected override paramsSchema = TeamPlayerParamsSchema
 
   protected async execute({
     params,
@@ -48,10 +47,7 @@ class RemovePlayerEndpoint extends ApiEndpoint<typeof TeamPlayerParamsSchema> {
     const entryName = playerHash.name ?? ""
     await client.srem(gamePlayersKey, params.playerId)
     await client.srem(teamPlayersKey, params.playerId)
-    await client.srem(
-      playerNamesKey,
-      entryName.trim().replace(/\s+/g, " ").toLowerCase()
-    )
+    await client.srem(playerNamesKey, redisLookupKey(entryName))
     await client.del(playerKey)
     await client.hincrby(gameKey, "revision", 1)
 
@@ -64,4 +60,4 @@ class RemovePlayerEndpoint extends ApiEndpoint<typeof TeamPlayerParamsSchema> {
   }
 }
 
-export const DELETE = new RemovePlayerEndpoint().handler
+export const DELETE = new RemovePlayerEndpoint().handle

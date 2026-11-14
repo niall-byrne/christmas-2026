@@ -1,5 +1,4 @@
 import type { ApiEndpointLogger } from "@/contracts/api/logger"
-import type { z } from "zod"
 
 export type ApiEndpointResult<TData = unknown> =
   | {
@@ -18,13 +17,4 @@ export interface ApiEndpointInput<Params, Body> {
   body: Body
   request: Request
   logger: ApiEndpointLogger
-}
-
-export interface ApiEndpointOptions<
-  TParams extends z.ZodType = z.ZodType,
-  TBody extends z.ZodType = z.ZodType,
-> {
-  paramsSchema?: TParams
-  bodySchema?: TBody
-  auth?: boolean
 }

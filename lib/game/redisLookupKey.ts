@@ -1,3 +1,5 @@
+import { normalizeWhitespace } from "@/lib/text/normalize"
+
 export function redisLookupKey(value: string): string {
-  return value.trim().replace(/\s+/g, " ").toLowerCase()
+  return normalizeWhitespace(value).toLowerCase()
 }

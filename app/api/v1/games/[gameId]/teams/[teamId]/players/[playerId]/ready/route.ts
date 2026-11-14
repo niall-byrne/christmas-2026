@@ -13,9 +13,7 @@ const ReadyParamsSchema = GameParamsSchema.extend({
 })
 
 class MarkPlayerReadyEndpoint extends ApiEndpoint<typeof ReadyParamsSchema> {
-  constructor() {
-    super({ paramsSchema: ReadyParamsSchema, auth: true })
-  }
+  protected override paramsSchema = ReadyParamsSchema
 
   protected async execute({
     params,
@@ -54,12 +52,10 @@ class MarkPlayerReadyEndpoint extends ApiEndpoint<typeof ReadyParamsSchema> {
   }
 }
 
-export const POST = new MarkPlayerReadyEndpoint().handler
+export const POST = new MarkPlayerReadyEndpoint().handle
 
 class MarkPlayerNotReadyEndpoint extends ApiEndpoint<typeof ReadyParamsSchema> {
-  constructor() {
-    super({ paramsSchema: ReadyParamsSchema, auth: true })
-  }
+  protected override paramsSchema = ReadyParamsSchema
 
   protected async execute({
     params,
@@ -98,4 +94,4 @@ class MarkPlayerNotReadyEndpoint extends ApiEndpoint<typeof ReadyParamsSchema> {
   }
 }
 
-export const DELETE = new MarkPlayerNotReadyEndpoint().handler
+export const DELETE = new MarkPlayerNotReadyEndpoint().handle

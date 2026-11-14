@@ -2,13 +2,11 @@ import "server-only"
 import type { ApiEndpointInput } from "@/contracts/api"
 import { Authorization } from "@/lib/api/auth"
 import { ApiEndpoint } from "@/lib/api/endpoint"
-import {
-  createGameId,
-  createPasswordSalt,
-  hashPassword,
-  serializeCardEntry,
-} from "@/lib/game/helpers"
+import { serializeCardEntry } from "@/lib/game/card"
+import { gameIds } from "@/lib/game/ids"
+import { gamePasswords } from "@/lib/game/password"
 import { redisKeys } from "@/lib/game/redisKeys"
+import { redisLookupKey } from "@/lib/game/redisLookupKey"
 import { RedisClient } from "@/lib/redis/client"
 import { z } from "zod"
 import { GAME_LOBBY_LEVEL } from "@/contracts/gameData/game"
@@ -18,22 +16,21 @@ class CreateGameEndpoint extends ApiEndpoint<
   z.ZodType,
   typeof CreateGameBodySchema
 > {
-  constructor() {
-    super({ bodySchema: CreateGameBodySchema })
-  }
+  protected override bodySchema = CreateGameBodySchema
+  protected override requiresAuth = false
 
   protected async execute({
     body,
   }: ApiEndpointInput<unknown, z.output<typeof CreateGameBodySchema>>) {
-    const gameId = createGameId()
-    const salt = createPasswordSalt()
+    const gameId = gameIds.createGameId()
+    const salt = gamePasswords.createSalt()
     const client = RedisClient.getClient()
     const gameKey = redisKeys.game(gameId)
     const cardsKey = redisKeys.cards(gameId)
 
     const cardsLookup = Object.fromEntries(
       body.cards.map(({ recipient, identifier }) => [
-        recipient.trim().replace(/\s+/g, " ").toLowerCase(),
+        redisLookupKey(recipient),
         serializeCardEntry(recipient, identifier),
       ])
     )
@@ -43,7 +40,7 @@ class CreateGameEndpoint extends ApiEndpoint<
       revision: "1",
       created_at: new Date().toISOString(),
       name: body.name,
-      password_hash: hashPassword(body.password, salt),
+      password_hash: gamePasswords.hash(body.password, salt),
       bonus_card: body.bonusCard,
     })
 
@@ -65,4 +62,4 @@ class CreateGameEndpoint extends ApiEndpoint<
   }
 }
 
-export const POST = new CreateGameEndpoint().handler
+export const POST = new CreateGameEndpoint().handle

@@ -9,9 +9,7 @@ import { GameParamsSchema, UpdateGameBodySchema } from "@/schemas/gameData/game"
 import { z } from "zod"
 
 class ReadGameEndpoint extends ApiEndpoint<typeof GameParamsSchema> {
-  constructor() {
-    super({ paramsSchema: GameParamsSchema, auth: true })
-  }
+  protected override paramsSchema = GameParamsSchema
 
   protected async execute({
     params,
@@ -33,19 +31,14 @@ class ReadGameEndpoint extends ApiEndpoint<typeof GameParamsSchema> {
   }
 }
 
-export const GET = new ReadGameEndpoint().handler
+export const GET = new ReadGameEndpoint().handle
 
 class UpdateGameEndpoint extends ApiEndpoint<
   typeof GameParamsSchema,
   typeof UpdateGameBodySchema
 > {
-  constructor() {
-    super({
-      paramsSchema: GameParamsSchema,
-      bodySchema: UpdateGameBodySchema,
-      auth: true,
-    })
-  }
+  protected override paramsSchema = GameParamsSchema
+  protected override bodySchema = UpdateGameBodySchema
 
   protected async execute({
     params,
@@ -92,4 +85,4 @@ class UpdateGameEndpoint extends ApiEndpoint<
   }
 }
 
-export const PATCH = new UpdateGameEndpoint().handler
+export const PATCH = new UpdateGameEndpoint().handle
