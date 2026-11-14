@@ -2,7 +2,6 @@ import { z } from "zod"
 import type {
   ApiEndpointContext,
   ApiEndpointInput,
-  ApiEndpointOptions,
   ApiEndpointResult,
 } from "@/contracts/api"
 import type { ApiErrorCode } from "@/contracts/gameData"
@@ -17,7 +16,9 @@ export abstract class ApiEndpoint<
   TBody extends z.ZodType = z.ZodType,
   TData = unknown,
 > {
-  constructor(protected readonly options: ApiEndpointOptions<TParams, TBody>) {}
+  protected paramsSchema?: TParams
+  protected bodySchema?: TBody
+  protected requiresAuth = true
 
   protected createErrorResponse(
     error: ApiErrorCode,
@@ -30,7 +31,7 @@ export abstract class ApiEndpoint<
   protected async parseBody(
     request: Request
   ): Promise<z.output<TBody> | undefined> {
-    const schema = this.options.bodySchema
+    const schema = this.bodySchema
     if (!schema || ["GET", "HEAD"].includes(request.method)) {
       return undefined
     }
@@ -85,7 +86,7 @@ export abstract class ApiEndpoint<
     input: ApiEndpointInput<z.output<TParams>, z.output<TBody>>
   ): Promise<ApiEndpointResult<TData>> | ApiEndpointResult<TData>
 
-  readonly handler = async (
+  readonly handle = async (
     request: Request,
     context: ApiEndpointContext<z.output<TParams>> = {}
   ): Promise<Response> => {
@@ -132,7 +133,7 @@ export abstract class ApiEndpoint<
   }
 
   protected parseParams(params: unknown): z.output<TParams> {
-    const schema = this.options.paramsSchema
+    const schema = this.paramsSchema
     if (!schema) {
       return undefined as z.output<TParams>
     }
@@ -146,7 +147,7 @@ export abstract class ApiEndpoint<
   }
 
   protected authorize(request: Request, params: unknown): void {
-    if (!this.options.auth) {
+    if (!this.requiresAuth) {
       return
     }
 

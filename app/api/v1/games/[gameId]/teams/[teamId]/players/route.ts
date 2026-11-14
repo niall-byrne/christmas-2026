@@ -2,7 +2,7 @@ import "server-only"
 import type { ApiEndpointInput } from "@/contracts/api"
 import { ApiRouteError } from "@/lib/api/error/endpoint"
 import { ApiEndpoint } from "@/lib/api/endpoint"
-import { createEntityId } from "@/lib/game/helpers"
+import { gameIds } from "@/lib/game/ids"
 import { redisKeys } from "@/lib/game/redisKeys"
 import { RedisClient } from "@/lib/redis/client"
 import { redisLookupKey } from "@/lib/game/redisLookupKey"
@@ -18,13 +18,8 @@ class AddPlayerEndpoint extends ApiEndpoint<
   typeof TeamPlayersParamsSchema,
   typeof AddPlayerBodySchema
 > {
-  constructor() {
-    super({
-      paramsSchema: TeamPlayersParamsSchema,
-      bodySchema: AddPlayerBodySchema,
-      auth: true,
-    })
-  }
+  protected override paramsSchema = TeamPlayersParamsSchema
+  protected override bodySchema = AddPlayerBodySchema
 
   protected async execute({
     params,
@@ -49,13 +44,12 @@ class AddPlayerEndpoint extends ApiEndpoint<
       throw new ApiRouteError("TEAM_NOT_FOUND", 404)
     }
 
-    const lookupKey = redisLookupKey(body.name)
-    const rawCard = await client.hget(cardsKey, lookupKey)
+    const normalizedName = redisLookupKey(body.name)
+    const rawCard = await client.hget(cardsKey, normalizedName)
     if (!rawCard) {
       throw new ApiRouteError("RECIPIENT_NOT_FOUND", 422)
     }
 
-    const normalizedName = redisLookupKey(body.name)
     if ((await client.sismember(playerNamesKey, normalizedName)) === 1) {
       throw new ApiRouteError("NAME_NOT_AVAILABLE", 409)
     }
@@ -68,7 +62,7 @@ class AddPlayerEndpoint extends ApiEndpoint<
       recipient?: string
       identifier?: string
     }
-    const playerId = createEntityId()
+    const playerId = gameIds.createEntityId()
     const playerKey = redisKeys.player(params.gameId, params.teamId, playerId)
 
     await client.hset(playerKey, {
@@ -91,4 +85,4 @@ class AddPlayerEndpoint extends ApiEndpoint<
   }
 }
 
-export const POST = new AddPlayerEndpoint().handler
+export const POST = new AddPlayerEndpoint().handle

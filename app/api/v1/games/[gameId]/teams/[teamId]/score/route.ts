@@ -16,13 +16,8 @@ class UpdateTeamScoreEndpoint extends ApiEndpoint<
   typeof TeamScoreParamsSchema,
   typeof UpdateTeamScoreBodySchema
 > {
-  constructor() {
-    super({
-      paramsSchema: TeamScoreParamsSchema,
-      bodySchema: UpdateTeamScoreBodySchema,
-      auth: true,
-    })
-  }
+  protected override paramsSchema = TeamScoreParamsSchema
+  protected override bodySchema = UpdateTeamScoreBodySchema
 
   protected async execute({
     params,
@@ -56,4 +51,4 @@ class UpdateTeamScoreEndpoint extends ApiEndpoint<
   }
 }
 
-export const PATCH = new UpdateTeamScoreEndpoint().handler
+export const PATCH = new UpdateTeamScoreEndpoint().handle

@@ -2,7 +2,7 @@ import "server-only"
 import type { ApiEndpointInput } from "@/contracts/api"
 import { ApiRouteError } from "@/lib/api/error/endpoint"
 import { ApiEndpoint } from "@/lib/api/endpoint"
-import { createEntityId } from "@/lib/game/helpers"
+import { gameIds } from "@/lib/game/ids"
 import { redisKeys } from "@/lib/game/redisKeys"
 import { redisLookupKey } from "@/lib/game/redisLookupKey"
 import { RedisClient } from "@/lib/redis/client"
@@ -14,13 +14,8 @@ class CreateTeamEndpoint extends ApiEndpoint<
   typeof GameParamsSchema,
   typeof CreateTeamBodySchema
 > {
-  constructor() {
-    super({
-      paramsSchema: GameParamsSchema,
-      bodySchema: CreateTeamBodySchema,
-      auth: true,
-    })
-  }
+  protected override paramsSchema = GameParamsSchema
+  protected override bodySchema = CreateTeamBodySchema
 
   protected async execute({
     params,
@@ -41,7 +36,7 @@ class CreateTeamEndpoint extends ApiEndpoint<
     const normalizedColor = body.color.toLowerCase()
     const teamNamesKey = redisKeys.teamNames(params.gameId)
     const teamColorsKey = redisKeys.teamColors(params.gameId)
-    const teamId = createEntityId()
+    const teamId = gameIds.createEntityId()
     const teamKey = redisKeys.team(params.gameId, teamId)
 
     if ((await client.sismember(teamNamesKey, normalizedName)) === 1) {
@@ -74,4 +69,4 @@ class CreateTeamEndpoint extends ApiEndpoint<
   }
 }
 
-export const POST = new CreateTeamEndpoint().handler
+export const POST = new CreateTeamEndpoint().handle
