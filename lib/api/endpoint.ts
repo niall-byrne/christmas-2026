@@ -4,12 +4,12 @@ import type {
   ApiEndpointInput,
   ApiEndpointResult,
 } from "@/contracts/api"
-import type { ApiErrorCode } from "@/contracts/gameData"
+import { ApiErrorCode } from "@/contracts/gameData"
 import { AuthorizationError } from "@/lib/api/error/auth"
 import { ApiRouteError } from "@/lib/api/error/endpoint"
 import { Authorization } from "@/lib/api/auth"
 import { ApiLogger } from "@/lib/api/logger"
-import { ERROR_MESSAGE_MAP } from "@/schemas/gameData"
+import { ERROR_MESSAGES } from "@/schemas/gameData"
 
 export abstract class ApiEndpoint<
   TParams extends z.ZodType = z.ZodType,
@@ -23,7 +23,7 @@ export abstract class ApiEndpoint<
   private createErrorResponse(
     error: ApiErrorCode,
     statusCode: number,
-    message = ERROR_MESSAGE_MAP.get(error) ?? "Request failed"
+    message = ERROR_MESSAGES[error]
   ): Response {
     return Response.json({ message, error }, { status: statusCode })
   }
@@ -45,13 +45,13 @@ export abstract class ApiEndpoint<
     try {
       json = JSON.parse(text)
     } catch {
-      throw new ApiRouteError("INVALID_JSON")
+      throw new ApiRouteError(ApiErrorCode.INVALID_JSON)
     }
 
     const parsed = schema.safeParse(json)
     if (!parsed.success) {
       const code = parsed.error.issues[0]?.message as ApiErrorCode | undefined
-      throw new ApiRouteError(code ?? "INVALID_JSON")
+      throw new ApiRouteError(code ?? ApiErrorCode.INVALID_JSON)
     }
 
     return parsed.data
@@ -141,7 +141,7 @@ export abstract class ApiEndpoint<
     const parsed = schema.safeParse(params)
     if (!parsed.success) {
       const code = parsed.error.issues[0]?.message as ApiErrorCode | undefined
-      throw new ApiRouteError(code ?? "INVALID_GAME_ID")
+      throw new ApiRouteError(code ?? ApiErrorCode.INVALID_GAME_ID)
     }
     return parsed.data
   }
@@ -175,7 +175,7 @@ export abstract class ApiEndpoint<
         id: requestIds,
         error,
       })
-      return this.createErrorResponse("UNAUTHORIZED", 401)
+      return this.createErrorResponse(ApiErrorCode.UNAUTHORIZED, 401)
     }
 
     if (error instanceof ApiRouteError) {
@@ -198,7 +198,7 @@ export abstract class ApiEndpoint<
       id: requestIds,
       error,
     })
-    return this.createErrorResponse("INTERNAL_SERVER_ERROR", 500)
+    return this.createErrorResponse(ApiErrorCode.INTERNAL_SERVER_ERROR, 500)
   }
 
   private getHttpContext(

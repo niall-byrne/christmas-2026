@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest"
+import { ApiErrorCode } from "@/contracts/gameData"
 import {
   ID_REGEX,
   GameIdSchema,
@@ -29,17 +30,17 @@ describe("common schemas", () => {
     {
       name: "GameIdSchema",
       schema: GameIdSchema,
-      expectedError: "INVALID_GAME_ID",
+      expectedError: ApiErrorCode.INVALID_GAME_ID,
     },
     {
       name: "TeamIdSchema",
       schema: TeamIdSchema,
-      expectedError: "INVALID_TEAM_ID",
+      expectedError: ApiErrorCode.INVALID_TEAM_ID,
     },
     {
       name: "PlayerIdSchema",
       schema: PlayerIdSchema,
-      expectedError: "INVALID_PLAYER_ID",
+      expectedError: ApiErrorCode.INVALID_PLAYER_ID,
     },
   ])("$name", ({ schema, expectedError }) => {
     it("accepts a valid 24-character lowercase alphanumeric ID", () => {

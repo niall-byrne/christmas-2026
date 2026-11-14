@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest"
+import { ApiErrorCode } from "@/contracts/gameData"
 import {
   BonusCardSchema,
   CardStateSchema,
@@ -23,7 +24,9 @@ describe("card schemas", () => {
       const result = BonusCardSchema.safeParse(input)
       expect(result.success).toBe(false)
       if (!result.success) {
-        expect(result.error.issues[0]?.message).toBe("INVALID_BONUS_CARD")
+        expect(result.error.issues[0]?.message).toBe(
+          ApiErrorCode.INVALID_BONUS_CARD
+        )
       }
     })
   })
@@ -78,7 +81,9 @@ describe("card schemas", () => {
       const result = GameCardsSchema.safeParse(input)
       expect(result.success).toBe(false)
       if (!result.success) {
-        expect(result.error.issues[0]?.message).toBe("INVALID_GAME_CARDS")
+        expect(result.error.issues[0]?.message).toBe(
+          ApiErrorCode.INVALID_GAME_CARDS
+        )
       }
     })
   })

@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest"
+import { ApiErrorCode } from "@/contracts/gameData"
 import {
   GAME_COMPLETE_LEVEL,
   GAME_LOBBY_LEVEL,
@@ -41,7 +42,9 @@ describe("game schemas", () => {
       const result = GameNameSchema.safeParse(input)
       expect(result.success).toBe(false)
       if (!result.success) {
-        expect(result.error.issues[0]?.message).toBe("INVALID_GAME_NAME")
+        expect(result.error.issues[0]?.message).toBe(
+          ApiErrorCode.INVALID_GAME_NAME
+        )
       }
     })
   })
@@ -62,7 +65,7 @@ describe("game schemas", () => {
       const result = GameLevelSchema.safeParse(input)
       expect(result.success).toBe(false)
       if (!result.success) {
-        expect(result.error.issues[0]?.message).toBe("INVALID_LEVEL")
+        expect(result.error.issues[0]?.message).toBe(ApiErrorCode.INVALID_LEVEL)
       }
     })
   })
@@ -84,7 +87,9 @@ describe("game schemas", () => {
       const result = GamePasswordSchema.safeParse(input)
       expect(result.success).toBe(false)
       if (!result.success) {
-        expect(result.error.issues[0]?.message).toBe("INVALID_GAME_PASSWORD")
+        expect(result.error.issues[0]?.message).toBe(
+          ApiErrorCode.INVALID_GAME_PASSWORD
+        )
       }
     })
   })
@@ -116,7 +121,9 @@ describe("game schemas", () => {
       })
       expect(result.success).toBe(false)
       if (!result.success) {
-        expect(result.error.issues[0]?.message).toBe("INVALID_GAME_NAME")
+        expect(result.error.issues[0]?.message).toBe(
+          ApiErrorCode.INVALID_GAME_NAME
+        )
       }
     })
 
@@ -128,7 +135,9 @@ describe("game schemas", () => {
       })
       expect(result.success).toBe(false)
       if (!result.success) {
-        expect(result.error.issues[0]?.message).toBe("INVALID_GAME_PASSWORD")
+        expect(result.error.issues[0]?.message).toBe(
+          ApiErrorCode.INVALID_GAME_PASSWORD
+        )
       }
     })
 
@@ -140,7 +149,9 @@ describe("game schemas", () => {
       })
       expect(result.success).toBe(false)
       if (!result.success) {
-        expect(result.error.issues[0]?.message).toBe("INVALID_BONUS_CARD")
+        expect(result.error.issues[0]?.message).toBe(
+          ApiErrorCode.INVALID_BONUS_CARD
+        )
       }
     })
 
@@ -152,7 +163,9 @@ describe("game schemas", () => {
       })
       expect(result.success).toBe(false)
       if (!result.success) {
-        expect(result.error.issues[0]?.message).toBe("INVALID_GAME_CARDS")
+        expect(result.error.issues[0]?.message).toBe(
+          ApiErrorCode.INVALID_GAME_CARDS
+        )
       }
     })
   })
@@ -169,13 +182,17 @@ describe("game schemas", () => {
       const missing = JoinGameBodySchema.safeParse({})
       expect(missing.success).toBe(false)
       if (!missing.success) {
-        expect(missing.error.issues[0]?.message).toBe("INVALID_GAME_PASSWORD")
+        expect(missing.error.issues[0]?.message).toBe(
+          ApiErrorCode.INVALID_GAME_PASSWORD
+        )
       }
 
       const blank = JoinGameBodySchema.safeParse({ password: "   " })
       expect(blank.success).toBe(false)
       if (!blank.success) {
-        expect(blank.error.issues[0]?.message).toBe("INVALID_GAME_PASSWORD")
+        expect(blank.error.issues[0]?.message).toBe(
+          ApiErrorCode.INVALID_GAME_PASSWORD
+        )
       }
     })
   })
@@ -198,7 +215,7 @@ describe("game schemas", () => {
       const result = UpdateGameBodySchema.safeParse({})
       expect(result.success).toBe(false)
       if (!result.success) {
-        expect(result.error.issues[0]?.message).toBe("INVALID_LEVEL")
+        expect(result.error.issues[0]?.message).toBe(ApiErrorCode.INVALID_LEVEL)
       }
     })
 
@@ -206,13 +223,17 @@ describe("game schemas", () => {
       const badLevel = UpdateGameBodySchema.safeParse({ level: 9 })
       expect(badLevel.success).toBe(false)
       if (!badLevel.success) {
-        expect(badLevel.error.issues[0]?.message).toBe("INVALID_LEVEL")
+        expect(badLevel.error.issues[0]?.message).toBe(
+          ApiErrorCode.INVALID_LEVEL
+        )
       }
 
       const badName = UpdateGameBodySchema.safeParse({ name: "" })
       expect(badName.success).toBe(false)
       if (!badName.success) {
-        expect(badName.error.issues[0]?.message).toBe("INVALID_GAME_NAME")
+        expect(badName.error.issues[0]?.message).toBe(
+          ApiErrorCode.INVALID_GAME_NAME
+        )
       }
     })
   })
@@ -226,7 +247,9 @@ describe("game schemas", () => {
       const invalid = GameParamsSchema.safeParse({ gameId: "bad-id" })
       expect(invalid.success).toBe(false)
       if (!invalid.success) {
-        expect(invalid.error.issues[0]?.message).toBe("INVALID_GAME_ID")
+        expect(invalid.error.issues[0]?.message).toBe(
+          ApiErrorCode.INVALID_GAME_ID
+        )
       }
     })
   })

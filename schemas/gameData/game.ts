@@ -1,4 +1,5 @@
 import { z } from "zod"
+import { ApiErrorCode } from "@/contracts/gameData"
 import {
   GAME_COMPLETE_LEVEL,
   GAME_LOBBY_LEVEL,
@@ -19,30 +20,30 @@ import { PlayerNameSchema } from "@/schemas/gameData/player"
 import { TeamColorSchema, TeamNameSchema } from "@/schemas/gameData/team"
 
 export const GameNameSchema = z
-  .string({ error: "INVALID_GAME_NAME" })
+  .string({ error: ApiErrorCode.INVALID_GAME_NAME })
   .trim()
-  .min(1, "INVALID_GAME_NAME")
-  .max(80, "INVALID_GAME_NAME")
+  .min(1, ApiErrorCode.INVALID_GAME_NAME)
+  .max(80, ApiErrorCode.INVALID_GAME_NAME)
 
 export const GameLevelSchema = z
-  .number({ error: "INVALID_LEVEL" })
-  .int("INVALID_LEVEL")
-  .min(GAME_LOBBY_LEVEL, "INVALID_LEVEL")
-  .max(GAME_COMPLETE_LEVEL, "INVALID_LEVEL")
+  .number({ error: ApiErrorCode.INVALID_LEVEL })
+  .int(ApiErrorCode.INVALID_LEVEL)
+  .min(GAME_LOBBY_LEVEL, ApiErrorCode.INVALID_LEVEL)
+  .max(GAME_COMPLETE_LEVEL, ApiErrorCode.INVALID_LEVEL)
 
 const ActiveGameLevelSchema = z
-  .number({ error: "INVALID_LEVEL" })
-  .int("INVALID_LEVEL")
-  .min(GAME_LOBBY_LEVEL, "INVALID_LEVEL")
+  .number({ error: ApiErrorCode.INVALID_LEVEL })
+  .int(ApiErrorCode.INVALID_LEVEL)
+  .min(GAME_LOBBY_LEVEL, ApiErrorCode.INVALID_LEVEL)
   .refine((level): level is ActiveGameLevel => level < GAME_COMPLETE_LEVEL, {
-    message: "INVALID_LEVEL",
+    message: ApiErrorCode.INVALID_LEVEL,
   })
 
 export const GamePasswordSchema = z
-  .string({ error: "INVALID_GAME_PASSWORD" })
+  .string({ error: ApiErrorCode.INVALID_GAME_PASSWORD })
   .trim()
-  .min(1, "INVALID_GAME_PASSWORD")
-  .max(128, "INVALID_GAME_PASSWORD")
+  .min(1, ApiErrorCode.INVALID_GAME_PASSWORD)
+  .max(128, ApiErrorCode.INVALID_GAME_PASSWORD)
 
 export const CreateGameBodySchema = z.object({
   name: GameNameSchema,
@@ -61,7 +62,7 @@ export const UpdateGameBodySchema = z
     name: GameNameSchema.optional(),
   })
   .refine((data) => data.level !== undefined || data.name !== undefined, {
-    message: "INVALID_LEVEL",
+    message: ApiErrorCode.INVALID_LEVEL,
   })
 
 export const GameParamsSchema = z.object({

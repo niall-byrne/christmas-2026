@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest"
+import { ApiErrorCode } from "@/contracts/gameData"
 import {
   PlayerNameSchema,
   AddPlayerBodySchema,
@@ -27,7 +28,9 @@ describe("player schemas", () => {
       const result = PlayerNameSchema.safeParse(input)
       expect(result.success).toBe(false)
       if (!result.success) {
-        expect(result.error.issues[0]?.message).toBe("INVALID_PLAYER_NAME")
+        expect(result.error.issues[0]?.message).toBe(
+          ApiErrorCode.INVALID_PLAYER_NAME
+        )
       }
     })
   })
@@ -61,7 +64,9 @@ describe("player schemas", () => {
       })
       expect(invalidPlayer.success).toBe(false)
       if (!invalidPlayer.success) {
-        expect(invalidPlayer.error.issues[0]?.message).toBe("INVALID_PLAYER_ID")
+        expect(invalidPlayer.error.issues[0]?.message).toBe(
+          ApiErrorCode.INVALID_PLAYER_ID
+        )
       }
     })
   })

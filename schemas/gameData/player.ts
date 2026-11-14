@@ -1,4 +1,5 @@
 import { z } from "zod"
+import { ApiErrorCode } from "@/contracts/gameData"
 import {
   GameIdSchema,
   TeamIdSchema,
@@ -6,10 +7,10 @@ import {
 } from "@/schemas/gameData/common"
 
 export const PlayerNameSchema = z
-  .string({ error: "INVALID_PLAYER_NAME" })
+  .string({ error: ApiErrorCode.INVALID_PLAYER_NAME })
   .trim()
-  .min(1, "INVALID_PLAYER_NAME")
-  .max(80, "INVALID_PLAYER_NAME")
+  .min(1, ApiErrorCode.INVALID_PLAYER_NAME)
+  .max(80, ApiErrorCode.INVALID_PLAYER_NAME)
 
 export const AddPlayerBodySchema = z.object({
   name: PlayerNameSchema,

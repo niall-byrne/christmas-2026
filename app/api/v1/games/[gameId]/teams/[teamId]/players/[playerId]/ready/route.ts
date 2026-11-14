@@ -1,5 +1,6 @@
 import "server-only"
 import type { ApiEndpointInput } from "@/contracts/api"
+import { ApiErrorCode } from "@/contracts/gameData"
 import { ApiRouteError } from "@/lib/api/error/endpoint"
 import { ApiEndpoint } from "@/lib/api/endpoint"
 import { redisKeys } from "@/lib/game/redisKeys"
@@ -28,15 +29,15 @@ class MarkPlayerReadyEndpoint extends ApiEndpoint<typeof ReadyParamsSchema> {
     )
 
     if ((await client.exists(gameKey)) === 0) {
-      throw new ApiRouteError("GAME_NOT_FOUND", 404)
+      throw new ApiRouteError(ApiErrorCode.GAME_NOT_FOUND, 404)
     }
 
     if ((await client.exists(teamKey)) === 0) {
-      throw new ApiRouteError("TEAM_NOT_FOUND", 404)
+      throw new ApiRouteError(ApiErrorCode.TEAM_NOT_FOUND, 404)
     }
 
     if ((await client.exists(playerKey)) === 0) {
-      throw new ApiRouteError("PLAYER_NOT_FOUND", 404)
+      throw new ApiRouteError(ApiErrorCode.PLAYER_NOT_FOUND, 404)
     }
 
     await client.hset(playerKey, { ready: "1" })
@@ -70,15 +71,15 @@ class MarkPlayerNotReadyEndpoint extends ApiEndpoint<typeof ReadyParamsSchema> {
     )
 
     if ((await client.exists(gameKey)) === 0) {
-      throw new ApiRouteError("GAME_NOT_FOUND", 404)
+      throw new ApiRouteError(ApiErrorCode.GAME_NOT_FOUND, 404)
     }
 
     if ((await client.exists(teamKey)) === 0) {
-      throw new ApiRouteError("TEAM_NOT_FOUND", 404)
+      throw new ApiRouteError(ApiErrorCode.TEAM_NOT_FOUND, 404)
     }
 
     if ((await client.exists(playerKey)) === 0) {
-      throw new ApiRouteError("PLAYER_NOT_FOUND", 404)
+      throw new ApiRouteError(ApiErrorCode.PLAYER_NOT_FOUND, 404)
     }
 
     await client.hset(playerKey, { ready: "0" })

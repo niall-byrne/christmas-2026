@@ -1,5 +1,6 @@
 import "server-only"
 import type { ApiEndpointInput } from "@/contracts/api"
+import { ApiErrorCode } from "@/contracts/gameData"
 import { Authorization } from "@/lib/api/auth"
 import { ApiRouteError } from "@/lib/api/error/endpoint"
 import { ApiEndpoint } from "@/lib/api/endpoint"
@@ -29,11 +30,11 @@ class JoinGameEndpoint extends ApiEndpoint<
     const storedHash = await client.hget(gameKey, "password_hash")
 
     if (!storedHash) {
-      throw new ApiRouteError("GAME_NOT_FOUND", 404)
+      throw new ApiRouteError(ApiErrorCode.GAME_NOT_FOUND, 404)
     }
 
     if (!gamePasswords.verify(body.password, storedHash)) {
-      throw new ApiRouteError("INCORRECT_GAME_PASSWORD", 401)
+      throw new ApiRouteError(ApiErrorCode.INCORRECT_GAME_PASSWORD, 401)
     }
 
     return {

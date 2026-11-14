@@ -1,5 +1,6 @@
 import "server-only"
 import type { ApiEndpointInput } from "@/contracts/api"
+import { ApiErrorCode } from "@/contracts/gameData"
 import { ApiRouteError } from "@/lib/api/error/endpoint"
 import { ApiEndpoint } from "@/lib/api/endpoint"
 import { redisKeys } from "@/lib/game/redisKeys"
@@ -32,16 +33,16 @@ class RemovePlayerEndpoint extends ApiEndpoint<typeof TeamPlayerParamsSchema> {
     const playerNamesKey = redisKeys.playerNames(params.gameId)
 
     if ((await client.exists(gameKey)) === 0) {
-      throw new ApiRouteError("GAME_NOT_FOUND", 404)
+      throw new ApiRouteError(ApiErrorCode.GAME_NOT_FOUND, 404)
     }
 
     if ((await client.exists(teamKey)) === 0) {
-      throw new ApiRouteError("TEAM_NOT_FOUND", 404)
+      throw new ApiRouteError(ApiErrorCode.TEAM_NOT_FOUND, 404)
     }
 
     const playerHash = await client.hgetall(playerKey)
     if (Object.keys(playerHash).length === 0) {
-      throw new ApiRouteError("PLAYER_NOT_FOUND", 404)
+      throw new ApiRouteError(ApiErrorCode.PLAYER_NOT_FOUND, 404)
     }
 
     const entryName = playerHash.name ?? ""
