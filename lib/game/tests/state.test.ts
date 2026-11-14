@@ -109,6 +109,27 @@ describe("GameState", () => {
       })
     })
 
+    describe("when the game revision is missing", () => {
+      let state: Promise<Awaited<ReturnType<GameState["read"]>>>
+
+      beforeEach(() => {
+        mockRedisClient({
+          hashes: {
+            [gameKey]: {
+              level: String(GAME_LOBBY_LEVEL),
+              created_at: TEST_FIXTURES.createdAt,
+              name: "Holiday Game",
+            },
+          },
+        })
+        state = new GameState(TEST_FIXTURES.gameId).read()
+      })
+
+      it("throws InvalidGameStateError instead of accepting revision zero", async () => {
+        await expect(state).rejects.toThrow(InvalidGameStateError)
+      })
+    })
+
     describe("when the game is active", () => {
       let state: Awaited<ReturnType<GameState["read"]>>
 

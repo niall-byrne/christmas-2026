@@ -219,6 +219,14 @@ describe("game schemas", () => {
       }
     })
 
+    it("rejects a null level with INVALID_LEVEL", () => {
+      const result = UpdateGameBodySchema.safeParse({ level: null })
+      expect(result.success).toBe(false)
+      if (!result.success) {
+        expect(result.error.issues[0]?.message).toBe(ApiErrorCode.INVALID_LEVEL)
+      }
+    })
+
     it("rejects invalid field values with their respective error codes", () => {
       const badLevel = UpdateGameBodySchema.safeParse({ level: 9 })
       expect(badLevel.success).toBe(false)

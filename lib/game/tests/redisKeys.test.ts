@@ -14,9 +14,21 @@ describe("redisKeys", () => {
     expect(redisKeys.teamColors(gameId)).toBe(`game:${gameId}:team_colors`)
     expect(redisKeys.players(gameId)).toBe(`game:${gameId}:players`)
     expect(redisKeys.playerNames(gameId)).toBe(`game:${gameId}:player_names`)
+    expect(redisKeys.gameExpirationKeys(gameId)).toEqual([
+      redisKeys.game(gameId),
+      redisKeys.cards(gameId),
+      redisKeys.teams(gameId),
+      redisKeys.teamNames(gameId),
+      redisKeys.teamColors(gameId),
+      redisKeys.players(gameId),
+      redisKeys.playerNames(gameId),
+    ])
   })
 
   it("builds nested team and player keys accurately", () => {
+    expect(redisKeys.teamPrefix(gameId)).toBe(`game:${gameId}:team:`)
+    expect(redisKeys.teamPlayersSuffix).toBe(":players")
+    expect(redisKeys.playerKeyPrefixSuffix).toBe(":player:")
     expect(redisKeys.team(gameId, teamId)).toBe(`game:${gameId}:team:${teamId}`)
     expect(redisKeys.teamPlayers(gameId, teamId)).toBe(
       `game:${gameId}:team:${teamId}:players`

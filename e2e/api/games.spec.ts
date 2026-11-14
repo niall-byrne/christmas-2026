@@ -1,6 +1,10 @@
 import { expect, test } from "@/e2e/resources/test"
 import type { APIRequestContext } from "@playwright/test"
-import { ApiErrorCode } from "@/contracts/gameData"
+import {
+  ApiErrorCode,
+  GAME_COMPLETE_LEVEL,
+  GAME_COMPLETE_TTL_SECONDS,
+} from "@/contracts/gameData"
 import {
   captureResponse,
   createApiContext,
@@ -12,8 +16,10 @@ import {
   createGameSession,
   readGame,
 } from "@/e2e/resources/games"
-import { deleteGameRecord } from "@/e2e/resources/redis"
+import { addPlayer } from "@/e2e/resources/players"
+import { deleteGameRecord, readGameKeyTTLs } from "@/e2e/resources/redis"
 import { TEST_FIXTURES } from "@/e2e/resources/fixtures"
+import { createTeam } from "@/e2e/resources/teams"
 
 test.describe("Game endpoints", () => {
   test.describe("POST /api/v1/games", () => {
@@ -346,6 +352,22 @@ test.describe("Game endpoints", () => {
         })
       })
 
+      test("rejects a null game level", async () => {
+        const activeSession = session
+        if (!activeSession) {
+          throw new Error("Game session was not initialized")
+        }
+
+        const response = await activeSession.patch(
+          `/api/v1/games/${scenario.gameId}`,
+          { data: { level: null } }
+        )
+        expect(response.status()).toBe(400)
+        expect(await response.json()).toMatchObject({
+          error: ApiErrorCode.INVALID_LEVEL,
+        })
+      })
+
       test("returns game not found when the game does not exist", async () => {
         const activeSession = session
         if (!activeSession) {
@@ -360,6 +382,52 @@ test.describe("Game endpoints", () => {
         expect(response.status()).toBe(404)
         expect(await response.json()).toMatchObject({
           error: ApiErrorCode.GAME_NOT_FOUND,
+        })
+      })
+
+      test.describe("when the game reaches the completed level", () => {
+        let completionScenario: {
+          responseStatus: number
+          responseBody: unknown
+          keyTTLs: { key: string; ttl: number }[]
+        }
+
+        test.beforeEach(async () => {
+          const activeSession = session
+          if (!activeSession) {
+            throw new Error("Game session was not initialized")
+          }
+
+          const { teamId } = await createTeam(activeSession, scenario.gameId)
+          await addPlayer(activeSession, scenario.gameId, teamId)
+          const response = await activeSession.patch(
+            `/api/v1/games/${scenario.gameId}`,
+            { data: { level: GAME_COMPLETE_LEVEL } }
+          )
+          completionScenario = {
+            responseStatus: response.status(),
+            responseBody: await response.json(),
+            keyTTLs: await readGameKeyTTLs(scenario.gameId),
+          }
+        })
+
+        test("returns the completed game level", () => {
+          expect(completionScenario.responseStatus).toBe(200)
+          expect(completionScenario.responseBody).toMatchObject({
+            gameId: scenario.gameId,
+            level: GAME_COMPLETE_LEVEL,
+          })
+        })
+
+        test("expires every game key for the configured retention period", () => {
+          expect(completionScenario.keyTTLs.length).toBeGreaterThan(0)
+          for (const { key, ttl } of completionScenario.keyTTLs) {
+            expect(
+              ttl,
+              `${key} should have a 24-hour expiration`
+            ).toBeGreaterThanOrEqual(GAME_COMPLETE_TTL_SECONDS - 60)
+            expect(ttl).toBeLessThanOrEqual(GAME_COMPLETE_TTL_SECONDS)
+          }
         })
       })
     })

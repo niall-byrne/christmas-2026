@@ -8,6 +8,7 @@ import type {
   ApiEndpointInput,
   ApiEndpointResult,
 } from "@/contracts/api/endpoint"
+import { InvalidGameStateError } from "@/lib/game/error/state"
 import { ApiRouteError } from "@/lib/api/error/endpoint"
 import { Authorization } from "@/lib/api/auth"
 import { ApiEndpoint } from "@/lib/api/endpoint"
@@ -356,6 +357,62 @@ describe("ApiEndpoint", () => {
         TEST_FIXTURES.expectedInternalError
       )
       expect(logSpy).toHaveBeenCalled()
+    })
+  })
+
+  describe("when ApiEndpoint.handle catches an invalid game state", () => {
+    let response: Response
+    let logSpy: ReturnType<typeof vi.spyOn>
+    let stateError: InvalidGameStateError
+
+    beforeEach(async () => {
+      vi.stubEnv("LOG_LEVEL", "error")
+      vi.stubEnv("SERVICE_NAME", "test-service")
+      stateError = new InvalidGameStateError("INVALID_GAME_DATA")
+      logSpy = vi.spyOn(console, "error").mockImplementation(() => {})
+      response = await callHandle(
+        {
+          requiresAuth: false,
+          paramsSchema: z.object({ gameId: z.string() }),
+          execute: async () => {
+            throw stateError
+          },
+        },
+        new Request(`${TEST_FIXTURES.url}/invalid-state`, {
+          headers: { "x-request-id": "invalid-state-request" },
+        }),
+        { params: { gameId: TEST_FIXTURES.gameId } }
+      )
+    })
+
+    it("returns a generic internal server error without exposing validation details", async () => {
+      expect(response.status).toBe(500)
+      await expect(response.json()).resolves.toEqual(
+        TEST_FIXTURES.expectedInternalError
+      )
+    })
+
+    it("logs the state error with request, route, and game context", () => {
+      expect(logSpy).toHaveBeenCalledTimes(1)
+      const [logLine] = logSpy.mock.calls[0]
+      const logPayload = JSON.parse(String(logLine))
+
+      expect(logPayload).toMatchObject({
+        level: "error",
+        service: "test-service",
+        requestId: "invalid-state-request",
+        message: stateError.message,
+        http: {
+          method: "GET",
+          path: new URL(`${TEST_FIXTURES.url}/invalid-state`).pathname,
+          statusCode: 500,
+        },
+        id: { gameId: TEST_FIXTURES.gameId },
+        error: {
+          name: "InvalidGameStateError",
+          message: stateError.message,
+        },
+      })
     })
   })
 
