@@ -34,10 +34,17 @@ export const addPlayerScript = `
 
   local payload = cjson.decode(cardJson)
   local playerId = ARGV[2]
-  local playerName = payload["recipient"]
+  local playerName = payload["recipient"] or ARGV[3]
   local ready = "0"
 
-  redis.call("HSET", playerKey, "name", playerName, "ready", ready)
+  redis.call(
+    "HSET",
+    playerKey,
+    "name",
+    playerName,
+    "ready",
+    ready
+  )
   redis.call("SADD", teamPlayersKey, playerId)
   redis.call("SADD", gamePlayersKey, playerId)
   redis.call("SADD", playerNamesKey, normalizedName)

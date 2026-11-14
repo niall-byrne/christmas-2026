@@ -6,9 +6,16 @@ import {
   createApiContext,
   sendRequest,
 } from "@/e2e/resources/api"
-import { captureGameMutation, createGameSession } from "@/e2e/resources/games"
+import {
+  captureGameMutation,
+  createGameSession,
+  readGame,
+} from "@/e2e/resources/games"
+import { deleteGameRecord } from "@/e2e/resources/redis"
 import { TEST_FIXTURES } from "@/e2e/resources/fixtures"
 import { createTeam } from "@/e2e/resources/teams"
+
+const MISSING_ENTITY_ID = "000000000000000000000000"
 
 test.describe("Team endpoints", () => {
   test.describe("POST /api/v1/games/:gameId/teams", () => {
@@ -105,6 +112,85 @@ test.describe("Team endpoints", () => {
           })
         })
       })
+
+      test("rejects a team name that is already in use", async () => {
+        const activeSession = session
+        if (!activeSession) {
+          throw new Error("Game session was not initialized")
+        }
+
+        const duplicateName = await activeSession.post(
+          `/api/v1/games/${scenario.gameId}/teams`,
+          { data: { name: TEST_FIXTURES.team.name, color: "#112233" } }
+        )
+        expect(duplicateName.status()).toBe(409)
+        expect(await duplicateName.json()).toMatchObject({
+          error: ApiErrorCode.TEAM_NAME_NOT_AVAILABLE,
+        })
+        expect(
+          (await readGame(activeSession, scenario.gameId)).teams
+        ).toHaveLength(1)
+      })
+
+      test("rejects a team color that is already in use", async () => {
+        const activeSession = session
+        if (!activeSession) {
+          throw new Error("Game session was not initialized")
+        }
+        const duplicateColor = await activeSession.post(
+          `/api/v1/games/${scenario.gameId}/teams`,
+          { data: { name: "Different team", color: TEST_FIXTURES.team.color } }
+        )
+        expect(duplicateColor.status()).toBe(409)
+        expect(await duplicateColor.json()).toMatchObject({
+          error: ApiErrorCode.TEAM_COLOUR_NOT_AVAILABLE,
+        })
+      })
+
+      test("returns game not found when the game does not exist", async () => {
+        const activeSession = session
+        if (!activeSession) {
+          throw new Error("Game session was not initialized")
+        }
+        await deleteGameRecord(scenario.gameId)
+        const missingGame = await activeSession.post(
+          `/api/v1/games/${scenario.gameId}/teams`,
+          { data: { name: "Another team", color: "#112233" } }
+        )
+        expect(missingGame.status()).toBe(404)
+        expect(await missingGame.json()).toMatchObject({
+          error: ApiErrorCode.GAME_NOT_FOUND,
+        })
+      })
+
+      test("allows only one concurrent creation of a team with the same name", async () => {
+        const activeSession = session
+        if (!activeSession) {
+          throw new Error("Game session was not initialized")
+        }
+
+        const responses = await Promise.all([
+          activeSession.post(`/api/v1/games/${scenario.gameId}/teams`, {
+            data: { name: "Concurrent team", color: "#112233" },
+          }),
+          activeSession.post(`/api/v1/games/${scenario.gameId}/teams`, {
+            data: { name: "Concurrent team", color: "#112233" },
+          }),
+        ])
+        expect(responses.map((response) => response.status()).sort()).toEqual([
+          201, 409,
+        ])
+        const conflict = responses.find((response) => response.status() === 409)
+        if (!conflict) {
+          throw new Error("Expected one concurrent team request to conflict")
+        }
+        expect(await conflict.json()).toMatchObject({
+          error: ApiErrorCode.TEAM_NAME_NOT_AVAILABLE,
+        })
+        expect(
+          (await readGame(activeSession, scenario.gameId)).teams
+        ).toHaveLength(2)
+      })
     })
   })
 
@@ -189,6 +275,65 @@ test.describe("Team endpoints", () => {
               expect.objectContaining({ teamId: scenario.teamId, score: 7 }),
             ],
           })
+        })
+      })
+
+      test("returns team not found when the team does not exist", async () => {
+        const activeSession = session
+        if (!activeSession) {
+          throw new Error("Game session was not initialized")
+        }
+        const response = await activeSession.patch(
+          `/api/v1/games/${scenario.gameId}/teams/${MISSING_ENTITY_ID}/score`,
+          { data: { delta: 1 } }
+        )
+        expect(response.status()).toBe(404)
+        expect(await response.json()).toMatchObject({
+          error: ApiErrorCode.TEAM_NOT_FOUND,
+        })
+      })
+
+      test("applies concurrent score changes without losing increments", async () => {
+        const activeSession = session
+        if (!activeSession) {
+          throw new Error("Game session was not initialized")
+        }
+
+        const before = await readGame(activeSession, scenario.gameId)
+        const deltas = [1, 2, 3, 4, 5]
+        const responses = await Promise.all(
+          deltas.map((delta) =>
+            activeSession.patch(
+              `/api/v1/games/${scenario.gameId}/teams/${scenario.teamId}/score`,
+              { data: { delta } }
+            )
+          )
+        )
+        expect(responses.map((response) => response.status())).toEqual(
+          Array(deltas.length).fill(200)
+        )
+
+        const after = await readGame(activeSession, scenario.gameId)
+        expect(after.teams[0].score).toBe(
+          before.teams[0].score +
+            deltas.reduce((total, delta) => total + delta, 0)
+        )
+        expect(after.revision).toBe(before.revision + deltas.length)
+      })
+
+      test("returns game not found when the game does not exist", async () => {
+        const activeSession = session
+        if (!activeSession) {
+          throw new Error("Game session was not initialized")
+        }
+        await deleteGameRecord(scenario.gameId)
+        const response = await activeSession.patch(
+          `/api/v1/games/${scenario.gameId}/teams/${scenario.teamId}/score`,
+          { data: { delta: 1 } }
+        )
+        expect(response.status()).toBe(404)
+        expect(await response.json()).toMatchObject({
+          error: ApiErrorCode.GAME_NOT_FOUND,
         })
       })
     })

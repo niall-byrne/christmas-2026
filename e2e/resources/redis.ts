@@ -7,3 +7,9 @@ export async function flushTestRedis() {
   await redis.flushdb()
   await redis.quit()
 }
+
+export async function deleteGameRecord(gameId: string) {
+  const redis = new Redis(E2E_REDIS_URL)
+  await redis.del(`game:${gameId}`)
+  await redis.quit()
+}

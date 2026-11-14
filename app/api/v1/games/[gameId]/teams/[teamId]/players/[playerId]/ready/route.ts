@@ -1,9 +1,9 @@
 import "server-only"
 import type { ApiEndpointInput } from "@/contracts/api"
-import { ApiErrorCode } from "@/contracts/gameData"
-import { ApiRouteError } from "@/lib/api/error/endpoint"
 import { ApiEndpoint } from "@/lib/api/endpoint"
 import { redisKeys } from "@/lib/game/redisKeys"
+import { executeGameScript } from "@/lib/game/redisScripts/execute"
+import { setReadyStatusScript } from "@/lib/game/redisScripts/setReadyStatus"
 import { RedisClient } from "@/lib/redis/client"
 import { GameParamsSchema } from "@/schemas/gameData/game"
 import { z } from "zod"
@@ -28,20 +28,12 @@ class MarkPlayerReadyEndpoint extends ApiEndpoint<typeof ReadyParamsSchema> {
       params.playerId
     )
 
-    if ((await client.exists(gameKey)) === 0) {
-      throw new ApiRouteError(ApiErrorCode.GAME_NOT_FOUND, 404)
-    }
-
-    if ((await client.exists(teamKey)) === 0) {
-      throw new ApiRouteError(ApiErrorCode.TEAM_NOT_FOUND, 404)
-    }
-
-    if ((await client.exists(playerKey)) === 0) {
-      throw new ApiRouteError(ApiErrorCode.PLAYER_NOT_FOUND, 404)
-    }
-
-    await client.hset(playerKey, { ready: "1" })
-    await client.hincrby(gameKey, "revision", 1)
+    await executeGameScript(
+      client,
+      setReadyStatusScript,
+      [gameKey, teamKey, playerKey],
+      ["1"]
+    )
 
     return {
       status: 200,
@@ -70,20 +62,12 @@ class MarkPlayerNotReadyEndpoint extends ApiEndpoint<typeof ReadyParamsSchema> {
       params.playerId
     )
 
-    if ((await client.exists(gameKey)) === 0) {
-      throw new ApiRouteError(ApiErrorCode.GAME_NOT_FOUND, 404)
-    }
-
-    if ((await client.exists(teamKey)) === 0) {
-      throw new ApiRouteError(ApiErrorCode.TEAM_NOT_FOUND, 404)
-    }
-
-    if ((await client.exists(playerKey)) === 0) {
-      throw new ApiRouteError(ApiErrorCode.PLAYER_NOT_FOUND, 404)
-    }
-
-    await client.hset(playerKey, { ready: "0" })
-    await client.hincrby(gameKey, "revision", 1)
+    await executeGameScript(
+      client,
+      setReadyStatusScript,
+      [gameKey, teamKey, playerKey],
+      ["0"]
+    )
 
     return {
       status: 200,

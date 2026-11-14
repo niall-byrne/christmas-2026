@@ -1,11 +1,11 @@
 import "server-only"
 import type { ApiEndpointInput } from "@/contracts/api"
-import { ApiErrorCode } from "@/contracts/gameData"
-import { ApiRouteError } from "@/lib/api/error/endpoint"
 import { ApiEndpoint } from "@/lib/api/endpoint"
 import { gameIds } from "@/lib/game/ids"
 import { redisKeys } from "@/lib/game/redisKeys"
 import { redisLookupKey } from "@/lib/game/redisLookupKey"
+import { createTeamScript } from "@/lib/game/redisScripts/createTeam"
+import { executeGameScript } from "@/lib/game/redisScripts/execute"
 import { RedisClient } from "@/lib/redis/client"
 import { GameParamsSchema } from "@/schemas/gameData/game"
 import { CreateTeamBodySchema } from "@/schemas/gameData/team"
@@ -27,12 +27,6 @@ class CreateTeamEndpoint extends ApiEndpoint<
   >) {
     const client = RedisClient.getClient()
     const gameKey = redisKeys.game(params.gameId)
-
-    const gameExists = await client.exists(gameKey)
-    if (gameExists === 0) {
-      throw new ApiRouteError(ApiErrorCode.GAME_NOT_FOUND, 404)
-    }
-
     const normalizedName = redisLookupKey(body.name)
     const normalizedColor = body.color.toLowerCase()
     const teamNamesKey = redisKeys.teamNames(params.gameId)
@@ -40,23 +34,22 @@ class CreateTeamEndpoint extends ApiEndpoint<
     const teamId = gameIds.createEntityId()
     const teamKey = redisKeys.team(params.gameId, teamId)
 
-    if ((await client.sismember(teamNamesKey, normalizedName)) === 1) {
-      throw new ApiRouteError(ApiErrorCode.TEAM_NAME_NOT_AVAILABLE, 409)
-    }
+    const result = await executeGameScript(
+      client,
+      createTeamScript,
+      [
+        gameKey,
+        redisKeys.teams(params.gameId),
+        teamNamesKey,
+        teamColorsKey,
+        teamKey,
+      ],
+      [normalizedName, normalizedColor, teamId, body.name, normalizedColor, "0"]
+    )
 
-    if ((await client.sismember(teamColorsKey, normalizedColor)) === 1) {
-      throw new ApiRouteError(ApiErrorCode.TEAM_COLOUR_NOT_AVAILABLE, 409)
+    if (result[0] !== teamId) {
+      throw new Error("Create-team script returned an unexpected team ID")
     }
-
-    await client.hset(teamKey, {
-      name: body.name,
-      color: normalizedColor,
-      score: "0",
-    })
-    await client.sadd(redisKeys.teams(params.gameId), teamId)
-    await client.sadd(teamNamesKey, normalizedName)
-    await client.sadd(teamColorsKey, normalizedColor)
-    await client.hincrby(gameKey, "revision", 1)
 
     return {
       status: 201,
