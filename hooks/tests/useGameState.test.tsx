@@ -4,6 +4,11 @@ import {
   GAME_LOBBY_LEVEL,
   type GetGameResponse,
 } from "@/contracts/gameData/game"
+import {
+  SSE_HEARTBEAT_EVENT,
+  SSE_HEARTBEAT_INTERVAL_MS,
+  SSE_HEARTBEAT_TIMEOUT_MS,
+} from "@/contracts/sse"
 import { gameClientState } from "@/lib/game/clientState"
 import { useGameState } from "@/hooks/useGameState"
 
@@ -13,6 +18,7 @@ class MockEventSource {
   onmessage: ((this: EventSource, event: MessageEvent) => void) | null = null
   onerror: ((this: EventSource, event: Event) => void) | null = null
   closed = false
+  protected readonly eventListeners = new Map<string, Set<EventListener>>()
 
   constructor(public readonly url: string | URL) {
     MockEventSource.instances.push(this)
@@ -35,6 +41,24 @@ class MockEventSource {
       this as unknown as EventSource,
       { data } as MessageEvent
     )
+  }
+
+  addEventListener(type: string, listener: EventListener) {
+    const listeners = this.eventListeners.get(type) ?? new Set<EventListener>()
+    listeners.add(listener)
+    this.eventListeners.set(type, listeners)
+  }
+
+  removeEventListener(type: string, listener: EventListener) {
+    this.eventListeners.get(type)?.delete(listener)
+  }
+
+  emitEvent(type: string): number {
+    const listeners = this.eventListeners.get(type)
+    for (const listener of listeners ?? []) {
+      listener(new Event(type))
+    }
+    return listeners?.size ?? 0
   }
 }
 
@@ -100,6 +124,90 @@ describe("useGameState", () => {
   })
 
   describe("when the EventSource connection is interrupted", () => {
+    describe("when an open stream stops sending heartbeats", () => {
+      let source: MockEventSource
+
+      beforeEach(async () => {
+        vi.useFakeTimers()
+        vi.mocked(fetch).mockResolvedValue(
+          Response.json(snapshot(2, "Recovered by polling"))
+        )
+        renderHook(() => useGameState(TEST_FIXTURES.gameId))
+        source = MockEventSource.instances[0]
+        act(() => source.emitOpen())
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(0)
+        })
+      })
+
+      it("starts fallback polling when the heartbeat timeout expires", async () => {
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(SSE_HEARTBEAT_TIMEOUT_MS)
+        })
+
+        expect(fetch).toHaveBeenCalledTimes(2)
+        expect(gameClientState.getSnapshot(TEST_FIXTURES.gameId)).toEqual(
+          snapshot(2, "Recovered by polling")
+        )
+      })
+
+      it("resets the timeout when a heartbeat arrives", async () => {
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(SSE_HEARTBEAT_INTERVAL_MS)
+        })
+        act(() => {
+          expect(source.emitEvent(SSE_HEARTBEAT_EVENT)).toBe(1)
+        })
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(SSE_HEARTBEAT_TIMEOUT_MS - 1)
+        })
+        expect(fetch).toHaveBeenCalledOnce()
+
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(1)
+        })
+        expect(fetch).toHaveBeenCalledTimes(2)
+      })
+    })
+
+    describe("when an open stream receives a game update", () => {
+      let source: MockEventSource
+
+      beforeEach(async () => {
+        vi.useFakeTimers()
+        renderHook(() => useGameState(TEST_FIXTURES.gameId))
+        source = MockEventSource.instances[0]
+        act(() => source.emitOpen())
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(0)
+        })
+      })
+
+      it("resets the liveness timeout when a game update arrives", async () => {
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(SSE_HEARTBEAT_INTERVAL_MS)
+        })
+        act(() =>
+          source.emitMessage(
+            JSON.stringify({
+              type: "game.state.changed",
+              data: snapshot(2, "Updated by the stream"),
+            })
+          )
+        )
+
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(SSE_HEARTBEAT_TIMEOUT_MS - 1)
+        })
+        expect(fetch).toHaveBeenCalledOnce()
+
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(1)
+        })
+        expect(fetch).toHaveBeenCalledTimes(2)
+      })
+    })
+
     describe("when the EventSource reconnects after an outage", () => {
       let source: MockEventSource
 
@@ -389,6 +497,38 @@ describe("useGameState", () => {
 
     it("closes its EventSource connection", () => {
       expect(source.close).toHaveBeenCalledOnce()
+    })
+  })
+
+  describe("when the hook is unmounted while the stream is open", () => {
+    let source: MockEventSource
+    let unmount: () => void
+
+    beforeEach(async () => {
+      vi.useFakeTimers()
+      const hook = renderHook(() => useGameState(TEST_FIXTURES.gameId))
+      source = MockEventSource.instances[0]
+      unmount = hook.unmount
+      act(() => source.emitOpen())
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0)
+      })
+    })
+
+    it("removes the heartbeat event listener", () => {
+      unmount()
+
+      expect(source.emitEvent(SSE_HEARTBEAT_EVENT)).toBe(0)
+    })
+
+    it("clears the liveness timeout", async () => {
+      unmount()
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(SSE_HEARTBEAT_TIMEOUT_MS)
+      })
+
+      expect(fetch).toHaveBeenCalledOnce()
     })
   })
 

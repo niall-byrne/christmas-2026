@@ -13,6 +13,7 @@ import {
   type MockInstance,
 } from "vitest"
 import { z } from "zod"
+import { SSE_HEARTBEAT_EVENT, SSE_HEARTBEAT_INTERVAL_MS } from "@/contracts/sse"
 import { RedisClient } from "@/lib/redis/client"
 import { RedisChannel } from "@/lib/redis/channel"
 
@@ -195,6 +196,36 @@ describe("RedisBroker", () => {
 
         const { value } = await reader.read()
         expect(decoder.decode(value)).toBe(`data: ${livePayload}\n\n`)
+      })
+    })
+
+    describe("when the heartbeat interval elapses", () => {
+      let response: Response
+
+      beforeEach(async () => {
+        vi.useFakeTimers()
+        response = await broker.createStreamResponse(
+          channel,
+          new NextRequest(TEST_FIXTURES.streamUrl)
+        )
+      })
+
+      it("sends a named heartbeat event every 30 seconds", async () => {
+        const reader = response.body!.getReader()
+        const heartbeat = reader.read()
+
+        await vi.advanceTimersByTimeAsync(SSE_HEARTBEAT_INTERVAL_MS - 1)
+        await expect(
+          Promise.race([heartbeat, Promise.resolve("pending")])
+        ).resolves.toBe("pending")
+
+        await vi.advanceTimersByTimeAsync(1)
+        const { value } = await heartbeat
+
+        expect(new TextDecoder().decode(value)).toBe(
+          `event: ${SSE_HEARTBEAT_EVENT}\ndata: {}\n\n`
+        )
+        await reader.cancel()
       })
     })
 

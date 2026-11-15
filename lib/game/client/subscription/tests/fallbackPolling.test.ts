@@ -47,6 +47,27 @@ describe("FallbackPolling", () => {
     })
   })
 
+  describe("when stream liveness expires", () => {
+    beforeEach(() => {
+      fetchSnapshot = vi.fn(async () => {})
+      polling = new FallbackPolling({
+        fetchSnapshot,
+        isActive: () => true,
+      })
+      polling.startImmediately()
+    })
+
+    it("fetches a snapshot without waiting for the grace period", () => {
+      expect(fetchSnapshot).toHaveBeenCalledOnce()
+    })
+
+    it("continues polling at the configured interval", async () => {
+      await vi.advanceTimersByTimeAsync(5_000)
+
+      expect(fetchSnapshot).toHaveBeenCalledTimes(2)
+    })
+  })
+
   describe("when start is called more than once", () => {
     beforeEach(() => {
       fetchSnapshot = vi.fn(async () => {})

@@ -15,11 +15,19 @@ export class FallbackPolling {
   constructor(protected readonly options: FallbackPollingOptions) {}
 
   start() {
+    this.scheduleStart(this.options.startDelayMs ?? FALLBACK_START_DELAY_MS)
+  }
+
+  startImmediately() {
+    this.scheduleStart(0)
+  }
+
+  protected scheduleStart(delayMs: number) {
     if (this.startTimer !== undefined || this.pollingInterval !== undefined) {
       return
     }
 
-    this.startTimer = setTimeout(() => {
+    const beginPolling = () => {
       this.startTimer = undefined
       if (!this.options.isActive()) return
 
@@ -27,7 +35,14 @@ export class FallbackPolling {
       this.pollingInterval = setInterval(() => {
         void this.options.fetchSnapshot()
       }, this.options.pollIntervalMs ?? FALLBACK_POLL_INTERVAL_MS)
-    }, this.options.startDelayMs ?? FALLBACK_START_DELAY_MS)
+    }
+
+    if (delayMs <= 0) {
+      beginPolling()
+      return
+    }
+
+    this.startTimer = setTimeout(beginPolling, delayMs)
   }
 
   stop() {
