@@ -3,24 +3,20 @@ import type {
   ApiEndpointLogger,
   ApiLogContext,
   ApiLogErrorPayload,
-  ApiLogLevel,
   ApiLoggerOptionProps,
-  ApiLoggerThreshold,
   StructuredApiLogPayload,
 } from "@/contracts/api"
+import {
+  STRUCTURED_LOG_LEVEL_WEIGHT,
+  type StructuredLogLevel,
+  type StructuredLogThreshold,
+} from "@/contracts/logger"
 import { RedisErrorExtractor } from "@/lib/api/error/redis"
 
 export class ApiLogger implements ApiEndpointLogger {
   static readonly MISSING_REQUEST_ID = "no-request-id"
   static readonly DEFAULT_SERVICE = "christmas-2026"
   static readonly DEFAULT_ENVIRONMENT = "development"
-
-  protected static readonly LEVEL_WEIGHT: Record<ApiLoggerThreshold, number> = {
-    info: 0,
-    warn: 1,
-    error: 2,
-    silent: 3,
-  }
 
   protected static readonly SENSITIVE_PATTERNS: Array<[RegExp, string]> = [
     [/("password"\s*:\s*)"[^"]*"/gi, '$1"[REDACTED]"'],
@@ -30,7 +26,7 @@ export class ApiLogger implements ApiEndpointLogger {
 
   protected readonly service?: string
   protected readonly environment?: string
-  protected readonly minLevel?: ApiLoggerThreshold
+  protected readonly minLevel?: StructuredLogThreshold
   protected readonly defaultContext: Omit<ApiLogContext, "error">
 
   constructor(options: ApiLoggerOptionProps = {}) {
@@ -65,8 +61,8 @@ export class ApiLogger implements ApiEndpointLogger {
 
   protected static isLoggerThreshold(
     value: string
-  ): value is ApiLoggerThreshold {
-    return Object.hasOwn(ApiLogger.LEVEL_WEIGHT, value)
+  ): value is StructuredLogThreshold {
+    return Object.hasOwn(STRUCTURED_LOG_LEVEL_WEIGHT, value)
   }
 
   protected static sanitizeText(value: string): string {
@@ -76,13 +72,16 @@ export class ApiLogger implements ApiEndpointLogger {
     )
   }
 
-  protected shouldLog(level: ApiLogLevel): boolean {
+  protected shouldLog(level: StructuredLogLevel): boolean {
     const envLevel = process.env.LOG_LEVEL?.trim().toLowerCase() ?? ""
     const threshold =
       this.minLevel ??
       (ApiLogger.isLoggerThreshold(envLevel) ? envLevel : "info")
 
-    return ApiLogger.LEVEL_WEIGHT[level] >= ApiLogger.LEVEL_WEIGHT[threshold]
+    return (
+      STRUCTURED_LOG_LEVEL_WEIGHT[level] >=
+      STRUCTURED_LOG_LEVEL_WEIGHT[threshold]
+    )
   }
 
   protected serializeError(err: Error): ApiLogErrorPayload {
@@ -144,7 +143,7 @@ export class ApiLogger implements ApiEndpointLogger {
   }
 
   protected buildBasePayload(
-    level: ApiLogLevel,
+    level: StructuredLogLevel,
     message: string,
     context: ApiLogContext
   ): Omit<StructuredApiLogPayload, "error"> {
@@ -184,7 +183,7 @@ export class ApiLogger implements ApiEndpointLogger {
     }
   }
 
-  protected emit(level: ApiLogLevel, line: string): void {
+  protected emit(level: StructuredLogLevel, line: string): void {
     if (level === "error") {
       console.error(line)
     } else if (level === "warn") {
@@ -195,7 +194,7 @@ export class ApiLogger implements ApiEndpointLogger {
   }
 
   write(
-    level: ApiLogLevel,
+    level: StructuredLogLevel,
     message: string,
     context: ApiLogContext = {}
   ): StructuredApiLogPayload | null {

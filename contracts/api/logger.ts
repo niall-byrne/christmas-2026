@@ -1,5 +1,8 @@
-export type ApiLogLevel = "info" | "warn" | "error"
-export type ApiLoggerThreshold = ApiLogLevel | "silent"
+import {
+  type StructuredLogLevel,
+  type StructuredLogThreshold,
+  type StructuredLogger,
+} from "@/contracts/logger"
 
 export interface RedisErrorMetadata {
   code?: string
@@ -29,7 +32,7 @@ export interface ApiLogErrorPayload {
 
 export interface StructuredApiLogPayload {
   timestamp: string
-  level: ApiLogLevel
+  level: StructuredLogLevel
   service: string
   environment: string
   requestId: string
@@ -39,20 +42,6 @@ export interface StructuredApiLogPayload {
   error?: ApiLogErrorPayload
 }
 
-export interface ApiEndpointLogger {
-  write(
-    level: ApiLogLevel,
-    message: string,
-    context?: ApiLogContext
-  ): StructuredApiLogPayload | null
-  info(message: string, context?: ApiLogContext): StructuredApiLogPayload | null
-  warn(message: string, context?: ApiLogContext): StructuredApiLogPayload | null
-  error(
-    message: string,
-    context?: ApiLogContext
-  ): StructuredApiLogPayload | null
-}
-
 export interface ApiLogContext {
   requestId?: string
   http?: ApiLogHttpContext
@@ -60,9 +49,14 @@ export interface ApiLogContext {
   error?: unknown
 }
 
+export type ApiEndpointLogger = StructuredLogger<
+  ApiLogContext,
+  StructuredApiLogPayload
+>
+
 export interface ApiLoggerOptionProps {
   service?: string
   environment?: string
-  minLevel?: ApiLoggerThreshold
+  minLevel?: StructuredLogThreshold
   defaultContext?: Omit<ApiLogContext, "error">
 }

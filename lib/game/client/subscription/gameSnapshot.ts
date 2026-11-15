@@ -1,3 +1,8 @@
+import {
+  type GameClientEndpointLogger,
+  gameClientLogger,
+} from "@/lib/game/client/logger"
+
 enum SnapshotFetchResultKind {
   Snapshot = "snapshot",
   Response = "response",
@@ -23,7 +28,8 @@ export class GameSnapshot {
 
   constructor(
     protected readonly gameId: string,
-    protected readonly options: GameSnapshotOptions
+    protected readonly options: GameSnapshotOptions,
+    protected readonly logger: GameClientEndpointLogger = gameClientLogger
   ) {
     this.fetcher = options.fetcher ?? fetch
   }
@@ -45,7 +51,12 @@ export class GameSnapshot {
         kind: SnapshotFetchResultKind.Snapshot,
         snapshot: await response.json(),
       }
-    } catch {
+    } catch (error) {
+      this.logger.warn("Snapshot request failed", {
+        component: "GameSnapshot",
+        gameId: this.gameId,
+        error: error instanceof Error ? error.message : String(error),
+      })
       return { kind: SnapshotFetchResultKind.Unavailable }
     }
   }
@@ -54,6 +65,11 @@ export class GameSnapshot {
     if (!this.options.isActive()) return
 
     if (result.kind === SnapshotFetchResultKind.Response) {
+      this.logger.warn("Snapshot request returned an error", {
+        component: "GameSnapshot",
+        gameId: this.gameId,
+        status: result.status,
+      })
       if (result.status === 401) {
         this.options.onUnauthorized()
       } else if (result.status === 404) {
@@ -70,6 +86,20 @@ export class GameSnapshot {
       result.snapshot.gameId === this.gameId
     ) {
       this.options.applySnapshot(result.snapshot)
+      this.logger.info("Applied game snapshot", {
+        component: "GameSnapshot",
+        gameId: this.gameId,
+        revision:
+          "revision" in result.snapshot ? result.snapshot.revision : undefined,
+      })
+      return
+    }
+
+    if (result.kind === SnapshotFetchResultKind.Snapshot) {
+      this.logger.warn("Ignoring invalid snapshot response", {
+        component: "GameSnapshot",
+        gameId: this.gameId,
+      })
     }
   }
 
