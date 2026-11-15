@@ -5,7 +5,9 @@ import { ApiRouteError } from "@/lib/api/error/endpoint"
 import { ApiEndpoint } from "@/lib/api/endpoint"
 import { GameState } from "@/lib/game/state"
 import { redisKeys } from "@/lib/game/redisKeys"
+import { publishGameStateChanged } from "@/lib/game/publishState"
 import { executeGameScript } from "@/lib/game/redisScripts/execute"
+import { GAME_SCRIPT_RESULT } from "@/lib/game/redisScripts/resultCodes"
 import { updateGameScript } from "@/lib/game/redisScripts/updateGame"
 import { RedisClient } from "@/lib/redis/client"
 import { GameParamsSchema, UpdateGameBodySchema } from "@/schemas/gameData/game"
@@ -46,6 +48,7 @@ class UpdateGameEndpoint extends ApiEndpoint<
   protected async execute({
     params,
     body,
+    logger,
   }: ApiEndpointInput<
     z.output<typeof GameParamsSchema>,
     z.output<typeof UpdateGameBodySchema>
@@ -53,7 +56,7 @@ class UpdateGameEndpoint extends ApiEndpoint<
     const client = RedisClient.getClient()
     const gameKey = redisKeys.game(params.gameId)
 
-    await executeGameScript(
+    const result = await executeGameScript(
       client,
       updateGameScript,
       redisKeys.gameExpirationKeys(params.gameId),
@@ -66,6 +69,10 @@ class UpdateGameEndpoint extends ApiEndpoint<
         redisKeys.playerKeyPrefixSuffix,
       ]
     )
+
+    if (result[0] !== GAME_SCRIPT_RESULT.NO_OP) {
+      await publishGameStateChanged(params.gameId, logger)
+    }
 
     const refreshed = await client.hgetall(gameKey)
     const createdAt = refreshed.created_at ?? new Date().toISOString()

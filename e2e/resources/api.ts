@@ -6,6 +6,15 @@ export interface PlaywrightTestHost {
   }
 }
 
+export function requireGameSession(
+  context: APIRequestContext | undefined
+): APIRequestContext {
+  if (!context) {
+    throw new Error("Game session was not initialized")
+  }
+  return context
+}
+
 export async function createApiContext(
   playwright: PlaywrightTestHost
 ): Promise<APIRequestContext> {

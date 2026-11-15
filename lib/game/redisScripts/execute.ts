@@ -1,6 +1,7 @@
 import "server-only"
 import { ApiErrorCode } from "@/contracts/gameData"
 import { ApiRouteError } from "@/lib/api/error/endpoint"
+import { GAME_SCRIPT_RESULT } from "@/lib/game/redisScripts/resultCodes"
 import type Redis from "ioredis"
 
 const SCRIPT_ERROR_STATUSES: Partial<Record<ApiErrorCode, number>> = {
@@ -40,8 +41,11 @@ export async function executeGameScript(
   }
 
   const [resultCode, ...values] = result
-  if (resultCode === "OK") {
+  if (resultCode === GAME_SCRIPT_RESULT.SUCCESS) {
     return values
+  }
+  if (resultCode === GAME_SCRIPT_RESULT.NO_OP) {
+    return [resultCode, ...values]
   }
 
   if (typeof resultCode === "string") {

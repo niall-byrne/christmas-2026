@@ -2,6 +2,7 @@ import "server-only"
 import type { ApiEndpointInput } from "@/contracts/api"
 import { ApiEndpoint } from "@/lib/api/endpoint"
 import { redisKeys } from "@/lib/game/redisKeys"
+import { publishGameStateChanged } from "@/lib/game/publishState"
 import { redisLookupKey } from "@/lib/game/redisLookupKey"
 import { executeGameScript } from "@/lib/game/redisScripts/execute"
 import { removePlayerScript } from "@/lib/game/redisScripts/removePlayer"
@@ -19,6 +20,7 @@ class RemovePlayerEndpoint extends ApiEndpoint<typeof TeamPlayerParamsSchema> {
 
   protected async execute({
     params,
+    logger,
   }: ApiEndpointInput<z.output<typeof TeamPlayerParamsSchema>, unknown>) {
     const client = RedisClient.getClient()
     const gameKey = redisKeys.game(params.gameId)
@@ -46,6 +48,8 @@ class RemovePlayerEndpoint extends ApiEndpoint<typeof TeamPlayerParamsSchema> {
       ],
       [params.playerId, redisLookupKey(playerName ?? "")]
     )
+
+    await publishGameStateChanged(params.gameId, logger)
 
     return {
       status: 200,

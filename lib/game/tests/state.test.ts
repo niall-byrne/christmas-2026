@@ -8,11 +8,9 @@ import {
 import { InvalidGameStateError } from "@/lib/game/error/state"
 import { GameState } from "@/lib/game/state"
 import { RedisClient } from "@/lib/redis/client"
+import { GAME_SCRIPT_RESULT } from "@/lib/game/redisScripts/resultCodes"
 
-type RedisStateClient = Pick<
-  ReturnType<typeof RedisClient.getClient>,
-  "hgetall" | "smembers"
->
+type RedisStateClient = Pick<ReturnType<typeof RedisClient.getClient>, "eval">
 
 interface RedisStateFixture {
   hashes?: Record<string, Record<string, string>>
@@ -24,8 +22,39 @@ function createRedisStateClient({
   sets = {},
 }: RedisStateFixture = {}): RedisStateClient {
   return {
-    hgetall: vi.fn(async (key: string) => hashes[key] ?? {}),
-    smembers: vi.fn(async (key: string) => sets[key] ?? []),
+    eval: vi.fn(
+      async (
+        _script: string,
+        _numberOfKeys: number,
+        gameKey: string,
+        cardsKey: string,
+        teamsKey: string
+      ) => {
+        const gameHash = hashes[gameKey] ?? {}
+        if (Object.keys(gameHash).length === 0) {
+          return [GAME_SCRIPT_RESULT.NOT_FOUND]
+        }
+
+        const toEntries = (hash: Record<string, string>) =>
+          Object.entries(hash).flatMap(([key, value]) => [key, value])
+
+        const teams = (sets[teamsKey] ?? []).map((teamId) => {
+          const teamKey = `${gameKey}:team:${teamId}`
+          const players = (sets[`${teamKey}:players`] ?? []).map((playerId) => [
+            playerId,
+            toEntries(hashes[`${teamKey}:player:${playerId}`] ?? {}),
+          ])
+          return [teamId, toEntries(hashes[teamKey] ?? {}), players]
+        })
+
+        return [
+          GAME_SCRIPT_RESULT.SUCCESS,
+          toEntries(gameHash),
+          toEntries(hashes[cardsKey] ?? {}),
+          teams,
+        ]
+      }
+    ) as unknown as RedisStateClient["eval"],
   }
 }
 
@@ -79,10 +108,15 @@ describe("GameState", () => {
         state = new GameState(TEST_FIXTURES.gameId).read()
       })
 
-      it("returns null without reading child keys", async () => {
+      it("returns null from one atomic Redis snapshot read", async () => {
         await expect(state).resolves.toBeNull()
-        expect(client.hgetall).toHaveBeenCalledExactlyOnceWith(gameKey)
-        expect(client.smembers).not.toHaveBeenCalled()
+        expect(client.eval).toHaveBeenCalledExactlyOnceWith(
+          expect.any(String),
+          3,
+          gameKey,
+          cardsKey,
+          teamsKey
+        )
       })
     })
 
@@ -185,7 +219,7 @@ describe("GameState", () => {
         state = await new GameState(TEST_FIXTURES.gameId).read()
       })
 
-      it("parses revision, preserves canonical recipients, and sorts state", () => {
+      it("returns the canonical active-game snapshot", () => {
         expect(state).toEqual({
           gameId: TEST_FIXTURES.gameId,
           name: "Holiday Game",
@@ -256,7 +290,7 @@ describe("GameState", () => {
         state = await new GameState(TEST_FIXTURES.gameId).read()
       })
 
-      it("includes the revision, bonus card, and cards in deterministic order", () => {
+      it("returns the complete snapshot for a completed game", () => {
         expect(state).toEqual({
           gameId: TEST_FIXTURES.gameId,
           name: "Completed Game",

@@ -10,4 +10,8 @@ export const TEST_FIXTURES = {
   },
   team: { name: "Reindeer", color: "#AABBCC" },
   player: { name: "Alice" },
+  redis: {
+    invalidRevision: "invalid-revision",
+    wrongTypeValue: "not-a-set",
+  },
 }
