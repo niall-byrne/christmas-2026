@@ -1,5 +1,6 @@
 "use client"
 
+import { SSE_HEARTBEAT_EVENT, SSE_HEARTBEAT_TIMEOUT_MS } from "@/contracts/sse"
 import { gameClientState } from "@/lib/game/clientState"
 import { FallbackPolling } from "@/lib/game/client/subscription/fallbackPolling"
 import { GameSnapshot } from "@/lib/game/client/subscription/gameSnapshot"
@@ -11,6 +12,7 @@ class GameStateSubscription {
   protected readonly fallbackPolling: FallbackPolling
   protected readonly gameSnapshot: GameSnapshot
   protected readonly gameStateEvents: GameStateEvents
+  protected streamLivenessTimer: ReturnType<typeof setTimeout> | undefined
 
   constructor(protected readonly gameId: string) {
     this.eventSource = new EventSource(
@@ -36,25 +38,54 @@ class GameStateSubscription {
 
   subscribe(): () => void {
     this.eventSource.onopen = () => this.handleEventSourceOpen()
-    this.eventSource.onmessage = (event) => this.gameStateEvents.handle(event)
+    this.eventSource.onmessage = (event) => {
+      this.resetStreamLivenessTimer()
+      this.gameStateEvents.handle(event)
+    }
     this.eventSource.onerror = () => this.fallbackPolling.start()
+    this.eventSource.addEventListener(SSE_HEARTBEAT_EVENT, this.handleHeartbeat)
 
     return () => this.cleanup()
   }
 
   protected handleEventSourceOpen() {
     this.fallbackPolling.stop()
+    this.resetStreamLivenessTimer()
     void this.gameSnapshot.fetch()
+  }
+
+  protected handleHeartbeat = () => {
+    this.resetStreamLivenessTimer()
+  }
+
+  protected resetStreamLivenessTimer() {
+    this.stopStreamLivenessTimer()
+    this.streamLivenessTimer = setTimeout(() => {
+      this.streamLivenessTimer = undefined
+      this.fallbackPolling.startImmediately()
+    }, SSE_HEARTBEAT_TIMEOUT_MS)
+  }
+
+  protected stopStreamLivenessTimer() {
+    if (this.streamLivenessTimer === undefined) return
+    clearTimeout(this.streamLivenessTimer)
+    this.streamLivenessTimer = undefined
   }
 
   protected handleTerminalSnapshotResponse() {
     this.fallbackPolling.stop()
+    this.stopStreamLivenessTimer()
     this.eventSource.close()
   }
 
   protected cleanup() {
     this.active = false
     this.fallbackPolling.stop()
+    this.stopStreamLivenessTimer()
+    this.eventSource.removeEventListener(
+      SSE_HEARTBEAT_EVENT,
+      this.handleHeartbeat
+    )
     this.eventSource.close()
   }
 }

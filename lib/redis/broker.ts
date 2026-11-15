@@ -1,5 +1,6 @@
 import "server-only"
 import type { z } from "zod"
+import { SSE_HEARTBEAT_EVENT, SSE_HEARTBEAT_INTERVAL_MS } from "@/contracts/sse"
 import { RedisClient } from "@/lib/redis/client"
 import type { RedisChannel } from "@/lib/redis/channel"
 
@@ -19,7 +20,7 @@ export class RedisBroker {
   async createStreamResponse<TSchema extends z.ZodType>(
     channel: RedisChannel<TSchema>,
     req: Request,
-    heartbeatMs = 25_000
+    heartbeatMs = SSE_HEARTBEAT_INTERVAL_MS
   ): Promise<Response> {
     const encoder = new TextEncoder()
     const subscriber = RedisClient.getClient().duplicate()
@@ -94,7 +95,7 @@ export class RedisBroker {
           enqueue(message)
         }
         heartbeat = setInterval(() => {
-          enqueue(": ping\n\n")
+          enqueue(`event: ${SSE_HEARTBEAT_EVENT}\ndata: {}\n\n`)
         }, heartbeatMs)
       },
       async cancel() {
