@@ -7,6 +7,7 @@ import {
   type Mock,
   vi,
 } from "vitest"
+import { GameClientLogger } from "@/lib/game/client/logger"
 import { GameSnapshot } from "@/lib/game/client/subscription/gameSnapshot"
 
 describe("GameSnapshot", () => {
@@ -110,16 +111,24 @@ describe("GameSnapshot", () => {
   })
 
   describe("when the request rejects", () => {
+    let logger: GameClientLogger
+
     beforeEach(async () => {
-      const gameSnapshot = new GameSnapshot(TEST_FIXTURES.gameId, {
-        isActive: () => true,
-        applySnapshot,
-        onUnauthorized,
-        onNotFound,
-        fetcher: vi.fn(async () => {
-          throw new Error("network unavailable")
-        }),
-      })
+      logger = new GameClientLogger({ enabled: true })
+      vi.spyOn(console, "warn").mockImplementation(() => {})
+      const gameSnapshot = new GameSnapshot(
+        TEST_FIXTURES.gameId,
+        {
+          isActive: () => true,
+          applySnapshot,
+          onUnauthorized,
+          onNotFound,
+          fetcher: vi.fn(async () => {
+            throw new Error("network unavailable")
+          }),
+        },
+        logger
+      )
       await gameSnapshot.fetch()
     })
 
@@ -130,6 +139,12 @@ describe("GameSnapshot", () => {
     it("does not call terminal response handlers", () => {
       expect(onUnauthorized).not.toHaveBeenCalled()
       expect(onNotFound).not.toHaveBeenCalled()
+    })
+
+    it("logs the snapshot request error", () => {
+      expect(console.warn).toHaveBeenCalledWith(
+        expect.stringContaining('"error":"network unavailable"')
+      )
     })
   })
 
