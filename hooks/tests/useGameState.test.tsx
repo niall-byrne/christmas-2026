@@ -75,6 +75,7 @@ describe("useGameState", () => {
   afterEach(() => {
     cleanup()
     gameClientState.clearSnapshot(TEST_FIXTURES.gameId)
+    vi.useRealTimers()
     vi.unstubAllGlobals()
     vi.restoreAllMocks()
   })
@@ -98,31 +99,162 @@ describe("useGameState", () => {
     })
   })
 
-  describe("when the event stream reconnects", () => {
-    let source: MockEventSource
+  describe("when the EventSource connection is interrupted", () => {
+    describe("when the EventSource reconnects after an outage", () => {
+      let source: MockEventSource
 
-    beforeEach(async () => {
-      vi.mocked(fetch)
-        .mockResolvedValueOnce(Response.json(snapshot(2, "First connection")))
-        .mockResolvedValueOnce(Response.json(snapshot(4, "Reconnected")))
-      renderHook(() => useGameState(TEST_FIXTURES.gameId))
-      source = MockEventSource.instances[0]
-      act(() => source.emitOpen())
-      await vi.waitFor(() => {
+      beforeEach(async () => {
+        vi.mocked(fetch)
+          .mockResolvedValueOnce(Response.json(snapshot(2, "First connection")))
+          .mockResolvedValueOnce(Response.json(snapshot(4, "Updated offline")))
+        vi.useFakeTimers()
+        renderHook(() => useGameState(TEST_FIXTURES.gameId))
+        source = MockEventSource.instances[0]
+        act(() => source.emitOpen())
+        await vi.waitFor(() => {
+          expect(gameClientState.getSnapshot(TEST_FIXTURES.gameId)).toEqual(
+            snapshot(2, "First connection")
+          )
+        })
+      })
+
+      it("recovers state after disconnecting and reconnecting", async () => {
+        act(() => source.emitError())
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(5_000)
+        })
+        expect(fetch).toHaveBeenCalledOnce()
+
+        await act(async () => {
+          source.emitOpen()
+          await vi.advanceTimersByTimeAsync(0)
+        })
         expect(gameClientState.getSnapshot(TEST_FIXTURES.gameId)).toEqual(
-          snapshot(2, "First connection")
+          snapshot(4, "Updated offline")
         )
+        expect(fetch).toHaveBeenCalledTimes(2)
+        expect(MockEventSource.instances).toHaveLength(1)
       })
     })
 
-    it("fetches the latest snapshot after each successful connection", async () => {
-      act(() => source.emitOpen())
-      await vi.waitFor(() => {
+    describe("when EventSource errors repeat during the outage grace period", () => {
+      let source: MockEventSource
+
+      beforeEach(() => {
+        vi.useFakeTimers()
+        vi.mocked(fetch).mockResolvedValue(
+          Response.json(snapshot(3, "Recovered by polling"))
+        )
+        renderHook(() => useGameState(TEST_FIXTURES.gameId))
+        source = MockEventSource.instances[0]
+      })
+
+      it("starts fallback polling after the outage grace period", async () => {
+        act(() => source.emitError())
+
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(5_000)
+        })
+        act(() => source.emitError())
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(4_999)
+        })
+        expect(fetch).not.toHaveBeenCalled()
+
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(1)
+        })
+        expect(gameClientState.getSnapshot(TEST_FIXTURES.gameId)).toEqual(
+          snapshot(3, "Recovered by polling")
+        )
+        expect(fetch).toHaveBeenCalledOnce()
+      })
+    })
+
+    describe("when fallback polling runs before EventSource reconnects", () => {
+      let source: MockEventSource
+
+      beforeEach(() => {
+        vi.useFakeTimers()
+        vi.mocked(fetch)
+          .mockResolvedValueOnce(
+            Response.json(snapshot(2, "Fallback snapshot"))
+          )
+          .mockResolvedValueOnce(Response.json(snapshot(3, "Polled snapshot")))
+          .mockResolvedValueOnce(Response.json(snapshot(4, "Reconnected")))
+        renderHook(() => useGameState(TEST_FIXTURES.gameId))
+        source = MockEventSource.instances[0]
+      })
+
+      it("polls for snapshots until the event stream reopens", async () => {
+        act(() => source.emitError())
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(9_999)
+        })
+        expect(fetch).not.toHaveBeenCalled()
+
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(1)
+        })
+        expect(gameClientState.getSnapshot(TEST_FIXTURES.gameId)).toEqual(
+          snapshot(2, "Fallback snapshot")
+        )
+
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(5_000)
+        })
+        expect(gameClientState.getSnapshot(TEST_FIXTURES.gameId)).toEqual(
+          snapshot(3, "Polled snapshot")
+        )
+
+        act(() => source.emitOpen())
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(0)
+        })
         expect(gameClientState.getSnapshot(TEST_FIXTURES.gameId)).toEqual(
           snapshot(4, "Reconnected")
         )
+
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(5_000)
+        })
+        expect(fetch).toHaveBeenCalledTimes(3)
       })
-      expect(fetch).toHaveBeenCalledTimes(2)
+    })
+
+    describe("when a fallback snapshot request fails", () => {
+      let source: MockEventSource
+
+      beforeEach(() => {
+        vi.useFakeTimers()
+        gameClientState.applySnapshot(snapshot(2, "Last accepted snapshot"))
+        vi.mocked(fetch)
+          .mockResolvedValueOnce(new Response(null, { status: 503 }))
+          .mockResolvedValueOnce(
+            Response.json(snapshot(3, "Recovered snapshot"))
+          )
+        renderHook(() => useGameState(TEST_FIXTURES.gameId))
+        source = MockEventSource.instances[0]
+      })
+
+      it("retains the last accepted snapshot until a later poll succeeds", async () => {
+        act(() => source.emitError())
+
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(10_000)
+        })
+        expect(gameClientState.getSnapshot(TEST_FIXTURES.gameId)).toEqual(
+          snapshot(2, "Last accepted snapshot")
+        )
+
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(5_000)
+        })
+        expect(gameClientState.getSnapshot(TEST_FIXTURES.gameId)).toEqual(
+          snapshot(3, "Recovered snapshot")
+        )
+        expect(fetch).toHaveBeenCalledTimes(2)
+      })
     })
   })
 
@@ -156,6 +288,34 @@ describe("useGameState", () => {
     })
 
     it("retains the snapshot with the higher revision", () => {
+      expect(gameClientState.getSnapshot(TEST_FIXTURES.gameId)).toEqual(
+        accepted
+      )
+    })
+  })
+
+  describe("when an older live game update arrives late", () => {
+    let accepted: GetGameResponse
+
+    beforeEach(() => {
+      renderHook(() => useGameState(TEST_FIXTURES.gameId))
+      const source = MockEventSource.instances[0]
+      accepted = snapshot(5, "Newest live update")
+
+      act(() => {
+        source.emitMessage(
+          JSON.stringify({ type: "game.state.changed", data: accepted })
+        )
+        source.emitMessage(
+          JSON.stringify({
+            type: "game.state.changed",
+            data: snapshot(4, "Late old update"),
+          })
+        )
+      })
+    })
+
+    it("keeps the newest game snapshot", () => {
       expect(gameClientState.getSnapshot(TEST_FIXTURES.gameId)).toEqual(
         accepted
       )
@@ -232,14 +392,47 @@ describe("useGameState", () => {
     })
   })
 
+  describe("when the hook is unmounted during fallback polling", () => {
+    let source: MockEventSource
+    let unmount: () => void
+    let fetchCallCount: number
+
+    beforeEach(async () => {
+      vi.useFakeTimers()
+      const hook = renderHook(() => useGameState(TEST_FIXTURES.gameId))
+      source = MockEventSource.instances[0]
+      unmount = hook.unmount
+      act(() => source.emitError())
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(10_000)
+      })
+      fetchCallCount = vi.mocked(fetch).mock.calls.length
+      unmount()
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(5_000)
+      })
+    })
+
+    it("closes EventSource and stops fallback polling", () => {
+      expect(source.close).toHaveBeenCalledOnce()
+      expect(fetch).toHaveBeenCalledTimes(fetchCallCount)
+    })
+  })
+
   describe("when the authenticated game request reports unauthorized", () => {
     let source: MockEventSource
 
     beforeEach(async () => {
+      vi.useFakeTimers()
       vi.mocked(fetch).mockResolvedValue(new Response(null, { status: 401 }))
       renderHook(() => useGameState(TEST_FIXTURES.gameId))
       source = MockEventSource.instances[0]
       act(() => source.emitError())
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(10_000)
+      })
       await vi.waitFor(() => expect(source.close).toHaveBeenCalledOnce())
     })
 
@@ -252,11 +445,15 @@ describe("useGameState", () => {
     let source: MockEventSource
 
     beforeEach(async () => {
+      vi.useFakeTimers()
       gameClientState.applySnapshot(snapshot(4, "Old game"))
       vi.mocked(fetch).mockResolvedValue(new Response(null, { status: 404 }))
       renderHook(() => useGameState(TEST_FIXTURES.gameId))
       source = MockEventSource.instances[0]
       act(() => source.emitError())
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(10_000)
+      })
       await vi.waitFor(() => expect(source.close).toHaveBeenCalledOnce())
     })
 
@@ -271,12 +468,16 @@ describe("useGameState", () => {
     let accepted: GetGameResponse
 
     beforeEach(async () => {
+      vi.useFakeTimers()
       accepted = snapshot(4, "Accepted")
       gameClientState.applySnapshot(accepted)
       vi.mocked(fetch).mockResolvedValue(new Response(null, { status: 503 }))
       renderHook(() => useGameState(TEST_FIXTURES.gameId))
       source = MockEventSource.instances[0]
       act(() => source.emitError())
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(10_000)
+      })
       await vi.waitFor(() => expect(fetch).toHaveBeenCalledOnce())
     })
 

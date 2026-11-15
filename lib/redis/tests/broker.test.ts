@@ -201,13 +201,14 @@ describe("RedisBroker", () => {
     describe("when the request is aborted", () => {
       let abortController: AbortController
       let subscriber: MockRedis
+      let response: Response
 
       beforeEach(async () => {
         abortController = new AbortController()
         const req = new NextRequest(TEST_FIXTURES.streamUrl, {
           signal: abortController.signal,
         })
-        await broker.createStreamResponse(channel, req, 60_000)
+        response = await broker.createStreamResponse(channel, req, 60_000)
         subscriber = mockClient.duplicates[0]
         abortController.abort()
         await vi.waitFor(() => subscriber.disconnect.mock.calls.length === 1)
@@ -218,6 +219,12 @@ describe("RedisBroker", () => {
           TEST_FIXTURES.channelName
         )
         expect(subscriber.disconnect).toHaveBeenCalledOnce()
+      })
+
+      it("closes the SSE response body after abort", async () => {
+        const reader = response.body!.getReader()
+
+        await expect(reader.read()).resolves.toMatchObject({ done: true })
       })
     })
 
