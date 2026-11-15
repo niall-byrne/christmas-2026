@@ -28,6 +28,8 @@ import { TEST_FIXTURES } from "@/e2e/resources/fixtures"
 import { createTeam } from "@/e2e/resources/teams"
 import { redisKeys } from "@/lib/game/redisKeys"
 
+const RATE_LIMITED_CLIENT_IP = "2001:db8::1"
+
 test.describe("Game endpoints", () => {
   test.describe("POST /api/v1/games", () => {
     test.describe("requests without a game session", () => {
@@ -85,6 +87,53 @@ test.describe("Game endpoints", () => {
         })
       })
 
+      test.describe("when the IP request limit is exhausted", () => {
+        let context: APIRequestContext | undefined
+        let scenario: {
+          responseStatus: number
+          responseBody: unknown
+          retryAfter: string | null
+        }
+
+        test.beforeEach(async ({ playwright }) => {
+          context = await createApiContext(playwright)
+
+          for (let attempt = 0; attempt < 10; attempt += 1) {
+            const response = await context.post("/api/v1/games", {
+              data: TEST_FIXTURES.game,
+              headers: {
+                "x-vercel-forwarded-for": RATE_LIMITED_CLIENT_IP,
+              },
+            })
+            expect(response.status()).toBe(201)
+          }
+
+          const response = await context.post("/api/v1/games", {
+            data: TEST_FIXTURES.game,
+            headers: {
+              "x-vercel-forwarded-for": RATE_LIMITED_CLIENT_IP,
+            },
+          })
+          scenario = {
+            responseStatus: response.status(),
+            responseBody: await response.json(),
+            retryAfter: response.headers()["retry-after"] ?? null,
+          }
+        })
+
+        test.afterEach(async () => {
+          await context?.dispose()
+        })
+
+        test("rejects the next game creation and returns the retry delay", () => {
+          expect(scenario.responseStatus).toBe(429)
+          expect(scenario.responseBody).toMatchObject({
+            error: ApiErrorCode.RATE_LIMITED,
+          })
+          expect(scenario.retryAfter).toBe("900")
+        })
+      })
+
       test.describe("invalid game creation payload", () => {
         let context: APIRequestContext | undefined
         let scenario: { responseStatus: number; responseBody: unknown }
@@ -115,6 +164,73 @@ test.describe("Game endpoints", () => {
   })
 
   test.describe("POST /api/v1/games/:gameId/join", () => {
+    test.describe("when creation and join requests reach the IP limit", () => {
+      let creator: APIRequestContext | undefined
+      let session: APIRequestContext | undefined
+      let scenario: {
+        responseStatus: number
+        responseBody: unknown
+        retryAfter: string | null
+      }
+
+      test.beforeEach(async ({ playwright }) => {
+        creator = await createApiContext(playwright)
+        session = await createApiContext(playwright)
+        const createResponse = await creator.post("/api/v1/games", {
+          data: TEST_FIXTURES.game,
+          headers: {
+            "x-vercel-forwarded-for": RATE_LIMITED_CLIENT_IP,
+          },
+        })
+        expect(createResponse.status()).toBe(201)
+        const { gameId } = await createResponse.json()
+        const path = `/api/v1/games/${gameId}/join`
+
+        const failedJoin = await session.post(path, {
+          data: { password: "incorrect-password" },
+          headers: {
+            "x-vercel-forwarded-for": RATE_LIMITED_CLIENT_IP,
+          },
+        })
+        expect(failedJoin.status()).toBe(401)
+
+        for (let attempt = 0; attempt < 8; attempt += 1) {
+          const response = await session.post(path, {
+            data: { password: TEST_FIXTURES.game.password },
+            headers: {
+              "x-vercel-forwarded-for": RATE_LIMITED_CLIENT_IP,
+            },
+          })
+          expect(response.status()).toBe(200)
+        }
+
+        const response = await session.post(path, {
+          data: { password: TEST_FIXTURES.game.password },
+          headers: {
+            "x-vercel-forwarded-for": RATE_LIMITED_CLIENT_IP,
+          },
+        })
+        scenario = {
+          responseStatus: response.status(),
+          responseBody: await response.json(),
+          retryAfter: response.headers()["retry-after"] ?? null,
+        }
+      })
+
+      test.afterEach(async () => {
+        await creator?.dispose()
+        await session?.dispose()
+      })
+
+      test("counts every request across both endpoints", () => {
+        expect(scenario.responseStatus).toBe(429)
+        expect(scenario.responseBody).toMatchObject({
+          error: ApiErrorCode.RATE_LIMITED,
+        })
+        expect(scenario.retryAfter).toBe("900")
+      })
+    })
+
     test.describe("requests without a game session", () => {
       test.describe("correct game password", () => {
         let creator: APIRequestContext | undefined

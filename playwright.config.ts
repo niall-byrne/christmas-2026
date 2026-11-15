@@ -19,6 +19,8 @@ export default defineConfig({
     env: {
       AUTH_SECRET: "playwright-test-auth-secret",
       REDIS_URL: E2E_REDIS_URL,
+      GAME_AUTH_RATE_LIMIT_MAX_REQUESTS: "10",
+      GAME_AUTH_RATE_LIMIT_WINDOW_SECONDS: "900",
     },
   },
 })

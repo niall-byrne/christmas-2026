@@ -23,9 +23,10 @@ export abstract class ApiEndpoint<
   private createErrorResponse(
     error: ApiErrorCode,
     statusCode: number,
-    message = ERROR_MESSAGES[error]
+    message = ERROR_MESSAGES[error],
+    headers?: HeadersInit
   ): Response {
-    return Response.json({ message, error }, { status: statusCode })
+    return Response.json({ message, error }, { status: statusCode, headers })
   }
 
   private async parseBody(
@@ -187,7 +188,8 @@ export abstract class ApiEndpoint<
       return this.createErrorResponse(
         error.error,
         error.statusCode,
-        error.message
+        error.message,
+        error.headers
       )
     }
 

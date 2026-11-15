@@ -1,15 +1,17 @@
 import "server-only"
 import type { ApiEndpointInput } from "@/contracts/api"
+import { GAME_LOBBY_LEVEL } from "@/contracts/gameData"
 import { Authorization } from "@/lib/api/auth"
 import { ApiEndpoint } from "@/lib/api/endpoint"
 import { serializeCardEntry } from "@/lib/game/card"
 import { gameIds } from "@/lib/game/ids"
+import { gameAuthRateLimiter } from "@/lib/game/joinRateLimit"
 import { gamePasswords } from "@/lib/game/password"
 import { redisKeys } from "@/lib/game/redisKeys"
+import { createGameScript } from "@/lib/game/redisScripts/createGame"
 import { redisLookupKey } from "@/lib/game/redisLookupKey"
 import { RedisClient } from "@/lib/redis/client"
 import { z } from "zod"
-import { GAME_LOBBY_LEVEL } from "@/contracts/gameData/game"
 import { CreateGameBodySchema } from "@/schemas/gameData/game"
 
 class CreateGameEndpoint extends ApiEndpoint<
@@ -21,7 +23,10 @@ class CreateGameEndpoint extends ApiEndpoint<
 
   protected async execute({
     body,
+    request,
   }: ApiEndpointInput<unknown, z.output<typeof CreateGameBodySchema>>) {
+    await gameAuthRateLimiter.enforce(request)
+
     const gameId = gameIds.createGameId()
     const salt = gamePasswords.createSalt()
     const client = RedisClient.getClient()
@@ -35,17 +40,25 @@ class CreateGameEndpoint extends ApiEndpoint<
       ])
     )
 
-    await client.hset(gameKey, {
+    const gameHash = {
       level: String(GAME_LOBBY_LEVEL),
       revision: "1",
       created_at: new Date().toISOString(),
       name: body.name,
-      password_hash: gamePasswords.hash(body.password, salt),
+      password_hash: await gamePasswords.hash(body.password, salt),
       bonus_card: body.bonusCard,
-    })
+    }
 
-    if (Object.keys(cardsLookup).length > 0) {
-      await client.hset(cardsKey, cardsLookup)
+    const result: unknown = await client.eval(
+      createGameScript,
+      2,
+      gameKey,
+      cardsKey,
+      JSON.stringify(gameHash),
+      JSON.stringify(cardsLookup)
+    )
+    if (result !== "OK") {
+      throw new Error("Create-game script returned an unexpected result")
     }
 
     return {

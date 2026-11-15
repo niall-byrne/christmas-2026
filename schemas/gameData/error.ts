@@ -19,6 +19,7 @@ export const ERROR_MESSAGES: Record<ApiErrorCode, string> = {
   [ApiErrorCode.INVALID_TEAM_NAME]: "Invalid name",
   [ApiErrorCode.NAME_NOT_AVAILABLE]: "Name not available",
   [ApiErrorCode.PLAYER_NOT_FOUND]: "Player not found",
+  [ApiErrorCode.RATE_LIMITED]: "Too many requests",
   [ApiErrorCode.RECIPIENT_NOT_FOUND]: "Player not on recipient list",
   [ApiErrorCode.TEAM_COLOUR_NOT_AVAILABLE]: "Team colour not available",
   [ApiErrorCode.TEAM_FULL]: "Team already full",
