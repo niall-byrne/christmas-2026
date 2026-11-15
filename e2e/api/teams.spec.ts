@@ -4,6 +4,7 @@ import { ApiErrorCode } from "@/contracts/gameData"
 import {
   captureResponse,
   createApiContext,
+  requireGameSession,
   sendRequest,
 } from "@/e2e/resources/api"
 import {
@@ -11,9 +12,14 @@ import {
   createGameSession,
   readGame,
 } from "@/e2e/resources/games"
-import { deleteGameRecord } from "@/e2e/resources/redis"
+import {
+  createTestRedisClient,
+  deleteGameRecord,
+  subscribeToGameStateEvents,
+} from "@/e2e/resources/redis"
 import { TEST_FIXTURES } from "@/e2e/resources/fixtures"
 import { createTeam } from "@/e2e/resources/teams"
+import { redisKeys } from "@/lib/game/redisKeys"
 
 const MISSING_ENTITY_ID = "000000000000000000000000"
 
@@ -53,6 +59,8 @@ test.describe("Team endpoints", () => {
 
     test.describe("requests with a valid game session", () => {
       let session: APIRequestContext | undefined
+      let eventSubscription:
+        Awaited<ReturnType<typeof subscribeToGameStateEvents>> | undefined
       let scenario: {
         gameId: string
         responseStatus: number
@@ -85,7 +93,143 @@ test.describe("Team endpoints", () => {
       })
 
       test.afterEach(async () => {
+        await eventSubscription?.close()
+        eventSubscription = undefined
         await session?.dispose()
+      })
+
+      test.describe("when the team membership key has the wrong Redis type", () => {
+        let redis: ReturnType<typeof createTestRedisClient>
+        let gameHashBefore: Record<string, string>
+        let teamNamesBefore: string[]
+        let teamColorsBefore: string[]
+        let existingTeamHash: Record<string, string>
+        let existingTeamKeys: string[]
+        let responseStatus: number
+
+        test.beforeEach(async () => {
+          redis = createTestRedisClient()
+          gameHashBefore = await redis.hgetall(redisKeys.game(scenario.gameId))
+          teamNamesBefore = await redis.smembers(
+            redisKeys.teamNames(scenario.gameId)
+          )
+          teamColorsBefore = await redis.smembers(
+            redisKeys.teamColors(scenario.gameId)
+          )
+          existingTeamHash = await redis.hgetall(
+            redisKeys.team(scenario.gameId, scenario.responseBody.teamId)
+          )
+          existingTeamKeys = await redis.keys(
+            `${redisKeys.teamPrefix(scenario.gameId)}*`
+          )
+          await redis.set(
+            redisKeys.teams(scenario.gameId),
+            TEST_FIXTURES.redis.wrongTypeValue
+          )
+
+          const activeSession = requireGameSession(session)
+          const response = await activeSession.post(
+            `/api/v1/games/${scenario.gameId}/teams`,
+            { data: { name: "Team with bad membership key", color: "#123456" } }
+          )
+          responseStatus = response.status()
+        })
+
+        test.afterEach(async () => {
+          await redis.quit()
+        })
+
+        test("leaves all team-creation state unchanged", async () => {
+          expect(responseStatus).toBe(500)
+          expect(await redis.hgetall(redisKeys.game(scenario.gameId))).toEqual(
+            gameHashBefore
+          )
+          expect(await redis.get(redisKeys.teams(scenario.gameId))).toBe(
+            TEST_FIXTURES.redis.wrongTypeValue
+          )
+          expect(
+            await redis.smembers(redisKeys.teamNames(scenario.gameId))
+          ).toEqual(teamNamesBefore)
+          expect(
+            await redis.smembers(redisKeys.teamColors(scenario.gameId))
+          ).toEqual(teamColorsBefore)
+          expect(
+            await redis.hgetall(
+              redisKeys.team(scenario.gameId, scenario.responseBody.teamId)
+            )
+          ).toEqual(existingTeamHash)
+          expect(
+            await redis.keys(`${redisKeys.teamPrefix(scenario.gameId)}*`)
+          ).toEqual(existingTeamKeys)
+        })
+      })
+
+      test.describe("when the stored revision is invalid", () => {
+        let redis: ReturnType<typeof createTestRedisClient>
+        let gameHashBefore: Record<string, string>
+        let teamNamesBefore: string[]
+        let teamColorsBefore: string[]
+        let teamMembershipBefore: string[]
+        let teamKeysBefore: string[]
+        let responseStatus: number
+
+        test.beforeEach(async () => {
+          redis = createTestRedisClient()
+          gameHashBefore = await redis.hgetall(redisKeys.game(scenario.gameId))
+          teamNamesBefore = await redis.smembers(
+            redisKeys.teamNames(scenario.gameId)
+          )
+          teamColorsBefore = await redis.smembers(
+            redisKeys.teamColors(scenario.gameId)
+          )
+          teamMembershipBefore = await redis.smembers(
+            redisKeys.teams(scenario.gameId)
+          )
+          teamKeysBefore = (
+            await redis.keys(`${redisKeys.teamPrefix(scenario.gameId)}*`)
+          ).sort()
+          await redis.hset(
+            redisKeys.game(scenario.gameId),
+            "revision",
+            TEST_FIXTURES.redis.invalidRevision
+          )
+
+          const activeSession = requireGameSession(session)
+          const response = await activeSession.post(
+            `/api/v1/games/${scenario.gameId}/teams`,
+            {
+              data: {
+                name: "Team with invalid game revision",
+                color: "#123456",
+              },
+            }
+          )
+          responseStatus = response.status()
+        })
+
+        test.afterEach(async () => {
+          await redis.quit()
+        })
+
+        test("leaves team records and indexes unchanged", async () => {
+          expect(responseStatus).toBe(500)
+          expect(await redis.hgetall(redisKeys.game(scenario.gameId))).toEqual({
+            ...gameHashBefore,
+            revision: TEST_FIXTURES.redis.invalidRevision,
+          })
+          expect(
+            await redis.smembers(redisKeys.teamNames(scenario.gameId))
+          ).toEqual(teamNamesBefore)
+          expect(
+            await redis.smembers(redisKeys.teamColors(scenario.gameId))
+          ).toEqual(teamColorsBefore)
+          expect(
+            await redis.smembers(redisKeys.teams(scenario.gameId))
+          ).toEqual(teamMembershipBefore)
+          expect(
+            await redis.keys(`${redisKeys.teamPrefix(scenario.gameId)}*`)
+          ).toEqual(teamKeysBefore)
+        })
       })
 
       test("returns the created team and persists it", async () => {
@@ -113,11 +257,38 @@ test.describe("Team endpoints", () => {
         })
       })
 
+      test.describe("when a team is created", () => {
+        let beforeRevision: number
+        let responseStatus: number
+        let event: unknown
+        let state: Awaited<ReturnType<typeof readGame>>
+
+        test.beforeEach(async () => {
+          const activeSession = requireGameSession(session)
+          beforeRevision = (await readGame(activeSession, scenario.gameId))
+            .revision
+          eventSubscription = await subscribeToGameStateEvents(scenario.gameId)
+          const response = await activeSession.post(
+            `/api/v1/games/${scenario.gameId}/teams`,
+            { data: { name: "Team event", color: "#123456" } }
+          )
+          responseStatus = response.status()
+          event = await eventSubscription.nextMessage()
+          state = await readGame(activeSession, scenario.gameId)
+        })
+
+        test("publishes the complete changed game snapshot", () => {
+          expect(responseStatus).toBe(201)
+          expect(event).toEqual({
+            type: "game.state.changed",
+            data: state,
+          })
+          expect(state.revision).toBe(beforeRevision + 1)
+        })
+      })
+
       test("rejects a team name that is already in use", async () => {
-        const activeSession = session
-        if (!activeSession) {
-          throw new Error("Game session was not initialized")
-        }
+        const activeSession = requireGameSession(session)
 
         const duplicateName = await activeSession.post(
           `/api/v1/games/${scenario.gameId}/teams`,
@@ -133,10 +304,7 @@ test.describe("Team endpoints", () => {
       })
 
       test("rejects a team color that is already in use", async () => {
-        const activeSession = session
-        if (!activeSession) {
-          throw new Error("Game session was not initialized")
-        }
+        const activeSession = requireGameSession(session)
         const duplicateColor = await activeSession.post(
           `/api/v1/games/${scenario.gameId}/teams`,
           { data: { name: "Different team", color: TEST_FIXTURES.team.color } }
@@ -148,10 +316,7 @@ test.describe("Team endpoints", () => {
       })
 
       test("returns game not found when the game does not exist", async () => {
-        const activeSession = session
-        if (!activeSession) {
-          throw new Error("Game session was not initialized")
-        }
+        const activeSession = requireGameSession(session)
         await deleteGameRecord(scenario.gameId)
         const missingGame = await activeSession.post(
           `/api/v1/games/${scenario.gameId}/teams`,
@@ -164,10 +329,7 @@ test.describe("Team endpoints", () => {
       })
 
       test("allows only one concurrent creation of a team with the same name", async () => {
-        const activeSession = session
-        if (!activeSession) {
-          throw new Error("Game session was not initialized")
-        }
+        const activeSession = requireGameSession(session)
 
         const responses = await Promise.all([
           activeSession.post(`/api/v1/games/${scenario.gameId}/teams`, {
@@ -230,6 +392,8 @@ test.describe("Team endpoints", () => {
 
     test.describe("requests with a valid game session", () => {
       let session: APIRequestContext | undefined
+      let eventSubscription:
+        Awaited<ReturnType<typeof subscribeToGameStateEvents>> | undefined
       let scenario: {
         gameId: string
         teamId: string
@@ -256,7 +420,53 @@ test.describe("Team endpoints", () => {
       })
 
       test.afterEach(async () => {
+        await eventSubscription?.close()
+        eventSubscription = undefined
         await session?.dispose()
+      })
+
+      test.describe("when the stored revision is invalid", () => {
+        let redis: ReturnType<typeof createTestRedisClient>
+        let teamHashBefore: Record<string, string>
+        let gameHashBefore: Record<string, string>
+        let responseStatus: number
+
+        test.beforeEach(async () => {
+          redis = createTestRedisClient()
+          teamHashBefore = await redis.hgetall(
+            redisKeys.team(scenario.gameId, scenario.teamId)
+          )
+          gameHashBefore = await redis.hgetall(redisKeys.game(scenario.gameId))
+          await redis.hset(
+            redisKeys.game(scenario.gameId),
+            "revision",
+            TEST_FIXTURES.redis.invalidRevision
+          )
+
+          const activeSession = requireGameSession(session)
+          const response = await activeSession.patch(
+            `/api/v1/games/${scenario.gameId}/teams/${scenario.teamId}/score`,
+            { data: { delta: 1 } }
+          )
+          responseStatus = response.status()
+        })
+
+        test.afterEach(async () => {
+          await redis.quit()
+        })
+
+        test("leaves the score and revision unchanged", async () => {
+          expect(responseStatus).toBe(500)
+          expect(
+            await redis.hgetall(
+              redisKeys.team(scenario.gameId, scenario.teamId)
+            )
+          ).toEqual(teamHashBefore)
+          expect(await redis.hgetall(redisKeys.game(scenario.gameId))).toEqual({
+            ...gameHashBefore,
+            revision: TEST_FIXTURES.redis.invalidRevision,
+          })
+        })
       })
 
       test("returns and persists the updated score", async () => {
@@ -278,11 +488,64 @@ test.describe("Team endpoints", () => {
         })
       })
 
+      test.describe("when a score changes", () => {
+        let beforeRevision: number
+        let responseStatus: number
+        let event: unknown
+        let state: Awaited<ReturnType<typeof readGame>>
+
+        test.beforeEach(async () => {
+          const activeSession = requireGameSession(session)
+          beforeRevision = (await readGame(activeSession, scenario.gameId))
+            .revision
+          eventSubscription = await subscribeToGameStateEvents(scenario.gameId)
+          const response = await activeSession.patch(
+            `/api/v1/games/${scenario.gameId}/teams/${scenario.teamId}/score`,
+            { data: { delta: 2 } }
+          )
+          responseStatus = response.status()
+          event = await eventSubscription.nextMessage()
+          state = await readGame(activeSession, scenario.gameId)
+        })
+
+        test("publishes the complete changed game snapshot", () => {
+          expect(responseStatus).toBe(200)
+          expect(event).toEqual({
+            type: "game.state.changed",
+            data: state,
+          })
+          expect(state.revision).toBe(beforeRevision + 1)
+        })
+      })
+
+      test.describe("when the score adjustment is zero", () => {
+        let responseStatus: number
+        let before: Awaited<ReturnType<typeof readGame>>
+        let after: Awaited<ReturnType<typeof readGame>>
+        let receivedEvent: boolean
+
+        test.beforeEach(async () => {
+          const activeSession = requireGameSession(session)
+          before = await readGame(activeSession, scenario.gameId)
+          eventSubscription = await subscribeToGameStateEvents(scenario.gameId)
+          const response = await activeSession.patch(
+            `/api/v1/games/${scenario.gameId}/teams/${scenario.teamId}/score`,
+            { data: { delta: 0 } }
+          )
+          responseStatus = response.status()
+          after = await readGame(activeSession, scenario.gameId)
+          receivedEvent = await eventSubscription.hasMessageAfterPing()
+        })
+
+        test("keeps the game revision unchanged and publishes no event", () => {
+          expect(responseStatus).toBe(200)
+          expect(after).toEqual(before)
+          expect(receivedEvent).toBe(false)
+        })
+      })
+
       test("returns team not found when the team does not exist", async () => {
-        const activeSession = session
-        if (!activeSession) {
-          throw new Error("Game session was not initialized")
-        }
+        const activeSession = requireGameSession(session)
         const response = await activeSession.patch(
           `/api/v1/games/${scenario.gameId}/teams/${MISSING_ENTITY_ID}/score`,
           { data: { delta: 1 } }
@@ -294,10 +557,7 @@ test.describe("Team endpoints", () => {
       })
 
       test("applies concurrent score changes without losing increments", async () => {
-        const activeSession = session
-        if (!activeSession) {
-          throw new Error("Game session was not initialized")
-        }
+        const activeSession = requireGameSession(session)
 
         const before = await readGame(activeSession, scenario.gameId)
         const deltas = [1, 2, 3, 4, 5]
@@ -322,10 +582,7 @@ test.describe("Team endpoints", () => {
       })
 
       test("returns game not found when the game does not exist", async () => {
-        const activeSession = session
-        if (!activeSession) {
-          throw new Error("Game session was not initialized")
-        }
+        const activeSession = requireGameSession(session)
         await deleteGameRecord(scenario.gameId)
         const response = await activeSession.patch(
           `/api/v1/games/${scenario.gameId}/teams/${scenario.teamId}/score`,

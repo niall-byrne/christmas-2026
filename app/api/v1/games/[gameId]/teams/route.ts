@@ -2,6 +2,7 @@ import "server-only"
 import type { ApiEndpointInput } from "@/contracts/api"
 import { ApiEndpoint } from "@/lib/api/endpoint"
 import { gameIds } from "@/lib/game/ids"
+import { publishGameStateChanged } from "@/lib/game/publishState"
 import { redisKeys } from "@/lib/game/redisKeys"
 import { redisLookupKey } from "@/lib/game/redisLookupKey"
 import { createTeamScript } from "@/lib/game/redisScripts/createTeam"
@@ -21,6 +22,7 @@ class CreateTeamEndpoint extends ApiEndpoint<
   protected async execute({
     params,
     body,
+    logger,
   }: ApiEndpointInput<
     z.output<typeof GameParamsSchema>,
     z.output<typeof CreateTeamBodySchema>
@@ -50,6 +52,8 @@ class CreateTeamEndpoint extends ApiEndpoint<
     if (result[0] !== teamId) {
       throw new Error("Create-team script returned an unexpected team ID")
     }
+
+    await publishGameStateChanged(params.gameId, logger)
 
     return {
       status: 201,

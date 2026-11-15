@@ -94,10 +94,10 @@ describe("RedisBroker", () => {
       ).rejects.toThrow(configError)
     })
 
-    it("propagates the error on createStreamResponse", () => {
+    it("propagates the error on createStreamResponse", async () => {
       const req = new NextRequest(TEST_FIXTURES.streamUrl)
 
-      expect(() => broker.createStreamResponse(channel, req)).toThrow(
+      await expect(broker.createStreamResponse(channel, req)).rejects.toThrow(
         configError
       )
     })
@@ -144,7 +144,7 @@ describe("RedisBroker", () => {
   })
 
   describe("createStreamResponse", () => {
-    describe("when a client subscribes and receives messages", () => {
+    describe("when a client subscribes", () => {
       let abortController: AbortController
       let response: Response
       let subscriber: MockRedis
@@ -155,8 +155,7 @@ describe("RedisBroker", () => {
           signal: abortController.signal,
         })
 
-        response = broker.createStreamResponse(channel, req, 60_000)
-        expect(mockClient.duplicate).toHaveBeenCalledTimes(1)
+        response = await broker.createStreamResponse(channel, req, 60_000)
         subscriber = mockClient.duplicates[0]
         await Promise.resolve()
       })
@@ -165,18 +164,25 @@ describe("RedisBroker", () => {
         abortController?.abort()
       })
 
-      it("duplicates the shared client, attaches an error listener, and subscribes to the channel", () => {
+      it("returns an SSE response", () => {
         expect(response.headers.get("Content-Type")).toBe("text/event-stream")
-        expect(subscriber.listenerCount("error")).toBeGreaterThanOrEqual(1)
+      })
+
+      it("subscribes a duplicate Redis client to the channel", () => {
+        expect(mockClient.duplicate).toHaveBeenCalledOnce()
         expect(subscriber.subscribe).toHaveBeenCalledWith(
           TEST_FIXTURES.channelName
         )
+      })
+
+      it("ignores subscriber connection errors", () => {
+        expect(subscriber.listenerCount("error")).toBeGreaterThanOrEqual(1)
         expect(() =>
           subscriber.emit("error", new Error("connect ECONNRESET"))
         ).not.toThrow()
       })
 
-      it("streams SSE data events and cleans up the subscriber on request abort", async () => {
+      it("streams an SSE data event", async () => {
         const reader = response.body!.getReader()
         const decoder = new TextDecoder()
         const livePayload = JSON.stringify({
@@ -189,15 +195,59 @@ describe("RedisBroker", () => {
 
         const { value } = await reader.read()
         expect(decoder.decode(value)).toBe(`data: ${livePayload}\n\n`)
+      })
+    })
 
-        abortController.abort()
+    describe("when the request is aborted", () => {
+      let abortController: AbortController
+      let subscriber: MockRedis
 
-        await vi.waitFor(() => {
-          expect(subscriber.unsubscribe).toHaveBeenCalledWith(
-            TEST_FIXTURES.channelName
-          )
-          expect(subscriber.disconnect).toHaveBeenCalledTimes(1)
+      beforeEach(async () => {
+        abortController = new AbortController()
+        const req = new NextRequest(TEST_FIXTURES.streamUrl, {
+          signal: abortController.signal,
         })
+        await broker.createStreamResponse(channel, req, 60_000)
+        subscriber = mockClient.duplicates[0]
+        abortController.abort()
+        await vi.waitFor(() => subscriber.disconnect.mock.calls.length === 1)
+      })
+
+      it("releases the subscriber after abort", () => {
+        expect(subscriber.unsubscribe).toHaveBeenCalledWith(
+          TEST_FIXTURES.channelName
+        )
+        expect(subscriber.disconnect).toHaveBeenCalledOnce()
+      })
+    })
+
+    describe("when a message arrives as Redis confirms the subscription", () => {
+      it("buffers the message until the SSE response is ready", async () => {
+        const payload = JSON.stringify({
+          id: TEST_FIXTURES.validUuid,
+          text: "Arrived during subscription",
+          createdAt: TEST_FIXTURES.createdAt,
+        })
+        mockClient.duplicate.mockImplementationOnce(() => {
+          const subscriber = new MockRedis()
+          subscriber.subscribe.mockImplementation(async () => {
+            subscriber.emitMessage(TEST_FIXTURES.channelName, payload)
+            return 1
+          })
+          mockClient.duplicates.push(subscriber)
+          return subscriber
+        })
+
+        const response = await broker.createStreamResponse(
+          channel,
+          new NextRequest(TEST_FIXTURES.streamUrl),
+          60_000
+        )
+        const reader = response.body!.getReader()
+        const { value } = await reader.read()
+
+        expect(new TextDecoder().decode(value)).toBe(`data: ${payload}\n\n`)
+        await reader.cancel()
       })
     })
 
@@ -206,13 +256,13 @@ describe("RedisBroker", () => {
 
       beforeEach(async () => {
         const req = new NextRequest(TEST_FIXTURES.streamUrl)
-        const response = broker.createStreamResponse(channel, req, 60_000)
+        const response = await broker.createStreamResponse(channel, req, 60_000)
         subscriber = mockClient.duplicates[0]
         await Promise.resolve()
         await response.body?.cancel()
       })
 
-      it("unsubscribes and disconnects the duplicated subscriber", () => {
+      it("releases the duplicated subscriber after cancellation", () => {
         expect(subscriber.unsubscribe).toHaveBeenCalledWith(
           TEST_FIXTURES.channelName
         )
@@ -221,19 +271,20 @@ describe("RedisBroker", () => {
     })
 
     describe("when heartbeat fires after request abort", () => {
-      it("does not throw when controller is already closed", async () => {
-        vi.useFakeTimers()
+      let abortController: AbortController
 
-        const abortController = new AbortController()
+      beforeEach(async () => {
+        vi.useFakeTimers()
+        abortController = new AbortController()
         const req = new NextRequest(TEST_FIXTURES.streamUrl, {
           signal: abortController.signal,
         })
 
-        broker.createStreamResponse(channel, req, 1_000)
-        await Promise.resolve()
-
+        await broker.createStreamResponse(channel, req, 1_000)
         abortController.abort()
+      })
 
+      it("does not throw when controller is already closed", () => {
         expect(() => vi.advanceTimersByTime(5_000)).not.toThrow()
       })
     })

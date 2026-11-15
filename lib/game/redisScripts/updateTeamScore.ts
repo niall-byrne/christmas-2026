@@ -1,7 +1,11 @@
 import "server-only"
 import { ApiErrorCode } from "@/contracts/gameData"
+import { gameMutationValidation } from "@/lib/game/redisScripts/mutationValidation"
+import { GAME_SCRIPT_RESULT } from "@/lib/game/redisScripts/resultCodes"
 
 export const updateTeamScoreScript = `
+  ${gameMutationValidation}
+
   local gameKey = KEYS[1]
   local teamKey = KEYS[2]
 
@@ -13,8 +17,20 @@ export const updateTeamScoreScript = `
     return { "${ApiErrorCode.TEAM_NOT_FOUND}" }
   end
 
+  if not keyHasType(gameKey, "hash")
+    or not keyHasType(teamKey, "hash")
+    or not revisionCanIncrement(gameKey) then
+    return invalidGameState()
+  end
+
+  local delta = tonumber(ARGV[1])
+  local currentScore = redis.call("HGET", teamKey, "score")
+  if delta == 0 and currentScore and tonumber(currentScore) then
+    return { "${GAME_SCRIPT_RESULT.NO_OP}", currentScore }
+  end
+
   local score = redis.call("HINCRBY", teamKey, "score", ARGV[1])
   redis.call("HINCRBY", gameKey, "revision", 1)
 
-  return { "OK", score }
+  return { "${GAME_SCRIPT_RESULT.SUCCESS}", score }
 `

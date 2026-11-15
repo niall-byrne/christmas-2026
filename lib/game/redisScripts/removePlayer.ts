@@ -1,7 +1,11 @@
 import "server-only"
 import { ApiErrorCode } from "@/contracts/gameData"
+import { gameMutationValidation } from "@/lib/game/redisScripts/mutationValidation"
+import { GAME_SCRIPT_RESULT } from "@/lib/game/redisScripts/resultCodes"
 
 export const removePlayerScript = `
+  ${gameMutationValidation}
+
   local gameKey = KEYS[1]
   local teamKey = KEYS[2]
   local teamPlayersKey = KEYS[3]
@@ -21,6 +25,16 @@ export const removePlayerScript = `
     return { "${ApiErrorCode.PLAYER_NOT_FOUND}" }
   end
 
+  if not keyHasType(gameKey, "hash")
+    or not keyHasType(teamKey, "hash")
+    or not keyHasType(teamPlayersKey, "set")
+    or not keyHasType(gamePlayersKey, "set")
+    or not keyHasType(playerNamesKey, "set")
+    or not keyHasType(playerKey, "hash")
+    or not revisionCanIncrement(gameKey) then
+    return invalidGameState()
+  end
+
   local playerName = redis.call("HGET", playerKey, "name")
   local playerId = ARGV[1]
 
@@ -30,5 +44,5 @@ export const removePlayerScript = `
   redis.call("DEL", playerKey)
   redis.call("HINCRBY", gameKey, "revision", 1)
 
-  return { "OK", playerName }
+  return { "${GAME_SCRIPT_RESULT.SUCCESS}", playerName }
 `

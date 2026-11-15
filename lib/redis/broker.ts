@@ -1,5 +1,4 @@
 import "server-only"
-import { NextRequest } from "next/server"
 import type { z } from "zod"
 import { RedisClient } from "@/lib/redis/client"
 import type { RedisChannel } from "@/lib/redis/channel"
@@ -17,17 +16,19 @@ export class RedisBroker {
     return validated
   }
 
-  createStreamResponse<TSchema extends z.ZodType>(
+  async createStreamResponse<TSchema extends z.ZodType>(
     channel: RedisChannel<TSchema>,
-    req: NextRequest,
+    req: Request,
     heartbeatMs = 25_000
-  ): Response {
+  ): Promise<Response> {
     const encoder = new TextEncoder()
     const subscriber = RedisClient.getClient().duplicate()
     subscriber.on("error", () => {})
 
     let heartbeat: ReturnType<typeof setInterval> | undefined
     let closed = false
+    let controller: ReadableStreamDefaultController<Uint8Array> | undefined
+    const pendingMessages: string[] = []
 
     const cleanup = async () => {
       if (closed) return
@@ -39,15 +40,17 @@ export class RedisBroker {
       }
 
       subscriber.removeAllListeners("message")
+      req.signal.removeEventListener("abort", abortStream)
       await subscriber.unsubscribe(channel.name).catch(() => {})
       subscriber.disconnect()
     }
 
-    const enqueue = (
-      controller: ReadableStreamDefaultController<Uint8Array>,
-      chunk: string
-    ) => {
+    const enqueue = (chunk: string) => {
       if (closed) return
+      if (!controller) {
+        pendingMessages.push(chunk)
+        return
+      }
       try {
         controller.enqueue(encoder.encode(chunk))
       } catch {
@@ -55,28 +58,44 @@ export class RedisBroker {
       }
     }
 
+    const abortStream = () => {
+      void cleanup()
+      try {
+        controller?.close()
+      } catch {
+        // Controller already closed
+      }
+    }
+
+    subscriber.on("message", (_channel, message) => {
+      enqueue(`data: ${message}\n\n`)
+    })
+    req.signal.addEventListener("abort", abortStream, { once: true })
+    if (req.signal.aborted) {
+      await cleanup()
+      return this.createClosedStreamResponse()
+    }
+
+    try {
+      await subscriber.subscribe(channel.name)
+    } catch (error) {
+      await cleanup()
+      throw error
+    }
+
+    if (closed) {
+      return this.createClosedStreamResponse()
+    }
+
     const stream = new ReadableStream<Uint8Array>({
-      async start(controller) {
-        await subscriber.subscribe(channel.name)
-
-        if (closed) return
-
+      start(streamController) {
+        controller = streamController
+        for (const message of pendingMessages.splice(0)) {
+          enqueue(message)
+        }
         heartbeat = setInterval(() => {
-          enqueue(controller, ": ping\n\n")
+          enqueue(": ping\n\n")
         }, heartbeatMs)
-
-        subscriber.on("message", (_ch, message) => {
-          enqueue(controller, `data: ${message}\n\n`)
-        })
-
-        req.signal.addEventListener("abort", () => {
-          void cleanup()
-          try {
-            controller.close()
-          } catch {
-            // Controller already closed
-          }
-        })
       },
       async cancel() {
         await cleanup()
@@ -84,12 +103,27 @@ export class RedisBroker {
     })
 
     return new Response(stream, {
-      headers: {
-        "Content-Type": "text/event-stream",
-        "Cache-Control": "no-cache, no-transform",
-        Connection: "keep-alive",
-      },
+      headers: this.streamHeaders(),
     })
+  }
+
+  protected createClosedStreamResponse(): Response {
+    return new Response(
+      new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.close()
+        },
+      }),
+      { headers: this.streamHeaders() }
+    )
+  }
+
+  protected streamHeaders(): HeadersInit {
+    return {
+      "Content-Type": "text/event-stream",
+      "Cache-Control": "no-cache, no-transform",
+      Connection: "keep-alive",
+    }
   }
 }
 

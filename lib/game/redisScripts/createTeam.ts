@@ -1,7 +1,11 @@
 import "server-only"
 import { ApiErrorCode } from "@/contracts/gameData"
+import { gameMutationValidation } from "@/lib/game/redisScripts/mutationValidation"
+import { GAME_SCRIPT_RESULT } from "@/lib/game/redisScripts/resultCodes"
 
 export const createTeamScript = `
+  ${gameMutationValidation}
+
   local gameKey = KEYS[1]
   local gameMembersKey = KEYS[2]
   local teamNamesKey = KEYS[3]
@@ -10,6 +14,15 @@ export const createTeamScript = `
 
   if redis.call("EXISTS", gameKey) == 0 then
     return { "${ApiErrorCode.GAME_NOT_FOUND}" }
+  end
+
+  if not keyHasType(gameKey, "hash")
+    or not keyHasType(gameMembersKey, "set")
+    or not keyHasType(teamNamesKey, "set")
+    or not keyHasType(teamColorsKey, "set")
+    or not keyHasType(teamKey, "hash")
+    or not revisionCanIncrement(gameKey) then
+    return invalidGameState()
   end
 
   local normalizedName = ARGV[1]
@@ -33,5 +46,5 @@ export const createTeamScript = `
   redis.call("SADD", teamColorsKey, normalizedColour)
   redis.call("HINCRBY", gameKey, "revision", 1)
 
-  return { "OK", teamId }
+  return { "${GAME_SCRIPT_RESULT.SUCCESS}", teamId }
 `

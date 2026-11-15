@@ -8,6 +8,7 @@ import {
 import {
   captureResponse,
   createApiContext,
+  requireGameSession,
   sendRequest,
 } from "@/e2e/resources/api"
 import {
@@ -17,9 +18,15 @@ import {
   readGame,
 } from "@/e2e/resources/games"
 import { addPlayer } from "@/e2e/resources/players"
-import { deleteGameRecord, readGameKeyTTLs } from "@/e2e/resources/redis"
+import {
+  createTestRedisClient,
+  deleteGameRecord,
+  readGameKeyTTLs,
+  subscribeToGameStateEvents,
+} from "@/e2e/resources/redis"
 import { TEST_FIXTURES } from "@/e2e/resources/fixtures"
 import { createTeam } from "@/e2e/resources/teams"
+import { redisKeys } from "@/lib/game/redisKeys"
 
 test.describe("Game endpoints", () => {
   test.describe("POST /api/v1/games", () => {
@@ -71,6 +78,7 @@ test.describe("Game endpoints", () => {
               gameId: scenario.gameId,
               name: TEST_FIXTURES.game.name,
               level: 0,
+              revision: 1,
               recipients: ["Alice", "Bob"],
             })
           })
@@ -288,6 +296,8 @@ test.describe("Game endpoints", () => {
 
     test.describe("requests with a valid game session", () => {
       let session: APIRequestContext | undefined
+      let eventSubscription:
+        Awaited<ReturnType<typeof subscribeToGameStateEvents>> | undefined
       let scenario: {
         gameId: string
         responseStatus: number
@@ -309,7 +319,47 @@ test.describe("Game endpoints", () => {
       })
 
       test.afterEach(async () => {
+        await eventSubscription?.close()
+        eventSubscription = undefined
         await session?.dispose()
+      })
+
+      test.describe("when the stored revision is invalid", () => {
+        let redis: ReturnType<typeof createTestRedisClient>
+        let gameHashBefore: Record<string, string>
+        let responseStatus: number
+
+        test.beforeEach(async () => {
+          redis = createTestRedisClient()
+          gameHashBefore = await redis.hgetall(redisKeys.game(scenario.gameId))
+          await redis.hset(
+            redisKeys.game(scenario.gameId),
+            "revision",
+            TEST_FIXTURES.redis.invalidRevision
+          )
+          eventSubscription = await subscribeToGameStateEvents(scenario.gameId)
+
+          const activeSession = requireGameSession(session)
+          const response = await activeSession.patch(
+            `/api/v1/games/${scenario.gameId}`,
+            { data: { name: "Should not be persisted" } }
+          )
+          responseStatus = response.status()
+        })
+
+        test.afterEach(async () => {
+          await redis.quit()
+        })
+
+        test("leaves the game name and revision unchanged", async () => {
+          expect(responseStatus).toBe(500)
+          expect(await redis.hgetall(redisKeys.game(scenario.gameId))).toEqual({
+            ...gameHashBefore,
+            revision: TEST_FIXTURES.redis.invalidRevision,
+          })
+          const receivedEvent = await eventSubscription?.hasMessageAfterPing()
+          expect(receivedEvent).toBe(false)
+        })
       })
 
       test("returns and persists the updated game name", async () => {
@@ -330,10 +380,7 @@ test.describe("Game endpoints", () => {
       })
 
       test("updates the game level", async () => {
-        const activeSession = session
-        if (!activeSession) {
-          throw new Error("Game session was not initialized")
-        }
+        const activeSession = requireGameSession(session)
 
         const response = await activeSession.patch(
           `/api/v1/games/${scenario.gameId}`,
@@ -352,11 +399,64 @@ test.describe("Game endpoints", () => {
         })
       })
 
+      test.describe("when a game update changes state", () => {
+        let beforeRevision: number
+        let responseStatus: number
+        let event: unknown
+        let state: Awaited<ReturnType<typeof readGame>>
+
+        test.beforeEach(async () => {
+          const activeSession = requireGameSession(session)
+          eventSubscription = await subscribeToGameStateEvents(scenario.gameId)
+          beforeRevision = (await readGame(activeSession, scenario.gameId))
+            .revision
+          const response = await activeSession.patch(
+            `/api/v1/games/${scenario.gameId}`,
+            { data: { level: 1 } }
+          )
+          responseStatus = response.status()
+          event = await eventSubscription.nextMessage()
+          state = await readGame(activeSession, scenario.gameId)
+        })
+
+        test("publishes the complete updated game snapshot", () => {
+          expect(responseStatus).toBe(200)
+          expect(event).toEqual({
+            type: "game.state.changed",
+            data: state,
+          })
+          expect(state.revision).toBe(beforeRevision + 1)
+        })
+      })
+
+      test.describe("when the requested game name is unchanged", () => {
+        let responseStatus: number
+        let before: Awaited<ReturnType<typeof readGame>>
+        let after: Awaited<ReturnType<typeof readGame>>
+        let receivedEvent: boolean
+
+        test.beforeEach(async () => {
+          const activeSession = requireGameSession(session)
+          before = await readGame(activeSession, scenario.gameId)
+          eventSubscription = await subscribeToGameStateEvents(scenario.gameId)
+          const response = await activeSession.patch(
+            `/api/v1/games/${scenario.gameId}`,
+            { data: { name: before.name } }
+          )
+          responseStatus = response.status()
+          after = await readGame(activeSession, scenario.gameId)
+          receivedEvent = await eventSubscription.hasMessageAfterPing()
+        })
+
+        test("keeps the revision unchanged and publishes no event", () => {
+          expect(responseStatus).toBe(200)
+          expect(after).toEqual(before)
+          expect(receivedEvent).toBe(false)
+        })
+      })
+
       test("rejects a null game level", async () => {
-        const activeSession = session
-        if (!activeSession) {
-          throw new Error("Game session was not initialized")
-        }
+        const activeSession = requireGameSession(session)
 
         const response = await activeSession.patch(
           `/api/v1/games/${scenario.gameId}`,
@@ -369,10 +469,7 @@ test.describe("Game endpoints", () => {
       })
 
       test("returns game not found when the game does not exist", async () => {
-        const activeSession = session
-        if (!activeSession) {
-          throw new Error("Game session was not initialized")
-        }
+        const activeSession = requireGameSession(session)
         await deleteGameRecord(scenario.gameId)
 
         const response = await activeSession.patch(
@@ -393,10 +490,7 @@ test.describe("Game endpoints", () => {
         }
 
         test.beforeEach(async () => {
-          const activeSession = session
-          if (!activeSession) {
-            throw new Error("Game session was not initialized")
-          }
+          const activeSession = requireGameSession(session)
 
           const { teamId } = await createTeam(activeSession, scenario.gameId)
           await addPlayer(activeSession, scenario.gameId, teamId)
@@ -428,6 +522,57 @@ test.describe("Game endpoints", () => {
             ).toBeGreaterThanOrEqual(GAME_COMPLETE_TTL_SECONDS - 60)
             expect(ttl).toBeLessThanOrEqual(GAME_COMPLETE_TTL_SECONDS)
           }
+        })
+      })
+
+      test.describe("when completing a game with an invalid team-player index", () => {
+        let redis: ReturnType<typeof createTestRedisClient>
+        let teamId: string
+        let gameHashBefore: Record<string, string>
+        let teamHashBefore: Record<string, string>
+        let keyTTLsBefore: { key: string; ttl: number }[]
+        let responseStatus: number
+
+        test.beforeEach(async () => {
+          const activeSession = requireGameSession(session)
+
+          redis = createTestRedisClient()
+          const team = await createTeam(activeSession, scenario.gameId)
+          teamId = team.teamId
+          await addPlayer(activeSession, scenario.gameId, teamId)
+          gameHashBefore = await redis.hgetall(redisKeys.game(scenario.gameId))
+          teamHashBefore = await redis.hgetall(
+            redisKeys.team(scenario.gameId, teamId)
+          )
+          await redis.set(
+            redisKeys.teamPlayers(scenario.gameId, teamId),
+            TEST_FIXTURES.redis.wrongTypeValue
+          )
+          keyTTLsBefore = await readGameKeyTTLs(scenario.gameId)
+
+          const response = await activeSession.patch(
+            `/api/v1/games/${scenario.gameId}`,
+            { data: { level: GAME_COMPLETE_LEVEL } }
+          )
+          responseStatus = response.status()
+        })
+
+        test.afterEach(async () => {
+          await redis.quit()
+        })
+
+        test("keeps game state and expiration times unchanged", async () => {
+          expect(responseStatus).toBe(500)
+          expect(await redis.hgetall(redisKeys.game(scenario.gameId))).toEqual(
+            gameHashBefore
+          )
+          expect(
+            await redis.hgetall(redisKeys.team(scenario.gameId, teamId))
+          ).toEqual(teamHashBefore)
+          expect(
+            await redis.get(redisKeys.teamPlayers(scenario.gameId, teamId))
+          ).toBe(TEST_FIXTURES.redis.wrongTypeValue)
+          expect(await readGameKeyTTLs(scenario.gameId)).toEqual(keyTTLsBefore)
         })
       })
     })

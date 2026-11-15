@@ -7,10 +7,17 @@ import type { CardState } from "@/contracts/gameData/card"
 import type { TeamState } from "@/contracts/gameData/team"
 import { InvalidGameStateError } from "@/lib/game/error/state"
 import { redisKeys } from "@/lib/game/redisKeys"
+import { readGameSnapshotScript } from "@/lib/game/redisScripts/readGameSnapshot"
+import { GAME_SCRIPT_RESULT } from "@/lib/game/redisScripts/resultCodes"
 import { RedisClient } from "@/lib/redis/client"
 import { GetGameResponseSchema } from "@/schemas/gameData/game"
 
 type GameHash = Record<string, string>
+type SnapshotTeam = {
+  teamId: string
+  teamHash: GameHash
+  players: { playerId: string; playerHash: GameHash }[]
+}
 
 export class GameState {
   protected readonly client: ReturnType<typeof RedisClient.getClient>
@@ -20,15 +27,26 @@ export class GameState {
   }
 
   async read(): Promise<GetGameResponse | null> {
-    const rootHash = await this.client.hgetall(redisKeys.game(this.gameId))
-    if (Object.keys(rootHash).length === 0) {
+    const result: unknown = await this.client.eval(
+      readGameSnapshotScript,
+      3,
+      redisKeys.game(this.gameId),
+      redisKeys.cards(this.gameId),
+      redisKeys.teams(this.gameId)
+    )
+    if (!Array.isArray(result) || result.length === 0) {
+      throw new InvalidGameStateError("INVALID_REDIS_SNAPSHOT")
+    }
+    if (result[0] === GAME_SCRIPT_RESULT.NOT_FOUND) {
       return null
     }
+    if (result[0] !== GAME_SCRIPT_RESULT.SUCCESS || result.length !== 4) {
+      throw new InvalidGameStateError("INVALID_REDIS_SNAPSHOT")
+    }
 
-    const [teamIds, cardsHash] = await Promise.all([
-      this.client.smembers(redisKeys.teams(this.gameId)),
-      this.client.hgetall(redisKeys.cards(this.gameId)),
-    ])
+    const rootHash = this.parseHash(result[1])
+    const cardsHash = this.parseHash(result[2])
+    const teams = this.parseSnapshotTeams(result[3])
     const level = Number(rootHash.level ?? 0)
     const state: Record<string, unknown> = {
       gameId: this.gameId,
@@ -37,7 +55,7 @@ export class GameState {
       revision: Number(rootHash.revision ?? 0),
       createdAt: rootHash.created_at ?? new Date().toISOString(),
       recipients: this.getRecipients(cardsHash),
-      teams: await this.getTeams(teamIds),
+      teams: this.getTeams(teams),
     }
 
     if (level >= GAME_COMPLETE_LEVEL) {
@@ -46,6 +64,62 @@ export class GameState {
     }
 
     return this.validate(state)
+  }
+
+  protected parseHash(value: unknown): GameHash {
+    if (
+      !Array.isArray(value) ||
+      value.length % 2 !== 0 ||
+      !value.every((item) => typeof item === "string")
+    ) {
+      throw new InvalidGameStateError("INVALID_REDIS_HASH")
+    }
+
+    const hash: GameHash = {}
+    for (let index = 0; index < value.length; index += 2) {
+      const key = value[index]
+      const entryValue = value[index + 1]
+      if (typeof key !== "string" || typeof entryValue !== "string") {
+        throw new InvalidGameStateError("INVALID_REDIS_HASH")
+      }
+      hash[key] = entryValue
+    }
+    return hash
+  }
+
+  protected parseSnapshotTeams(value: unknown): SnapshotTeam[] {
+    if (!Array.isArray(value)) {
+      throw new InvalidGameStateError("INVALID_REDIS_TEAMS")
+    }
+
+    return value.map((row) => {
+      if (
+        !Array.isArray(row) ||
+        row.length !== 3 ||
+        typeof row[0] !== "string" ||
+        !Array.isArray(row[2])
+      ) {
+        throw new InvalidGameStateError("INVALID_REDIS_TEAM")
+      }
+
+      return {
+        teamId: row[0],
+        teamHash: this.parseHash(row[1]),
+        players: row[2].map((playerRow) => {
+          if (
+            !Array.isArray(playerRow) ||
+            playerRow.length !== 2 ||
+            typeof playerRow[0] !== "string"
+          ) {
+            throw new InvalidGameStateError("INVALID_REDIS_PLAYER")
+          }
+          return {
+            playerId: playerRow[0],
+            playerHash: this.parseHash(playerRow[1]),
+          }
+        }),
+      }
+    })
   }
 
   protected getRecipients(cardsHash: GameHash): string[] {
@@ -90,48 +164,22 @@ export class GameState {
       .sort((left, right) => left.recipient.localeCompare(right.recipient))
   }
 
-  protected async getTeams(teamIds: string[]): Promise<TeamState[]> {
-    return Promise.all(
-      [...teamIds]
-        .sort((left, right) => left.localeCompare(right))
-        .map((teamId) => this.getTeam(teamId))
-    )
-  }
-
-  protected async getTeam(teamId: string): Promise<TeamState> {
-    const teamKey = redisKeys.team(this.gameId, teamId)
-    const [teamHash, playerIds] = await Promise.all([
-      this.client.hgetall(teamKey),
-      this.client.smembers(redisKeys.teamPlayers(this.gameId, teamId)),
-    ])
-
-    return {
-      teamId,
-      name: teamHash.name ?? "",
-      color: (teamHash.color ?? "#000000").toLowerCase(),
-      score: Number(teamHash.score ?? 0),
-      players: await this.getPlayers(teamId, playerIds),
-    }
-  }
-
-  protected async getPlayers(
-    teamId: string,
-    playerIds: string[]
-  ): Promise<TeamState["players"]> {
-    return Promise.all(
-      [...playerIds]
-        .sort((left, right) => left.localeCompare(right))
-        .map(async (playerId) => {
-          const playerHash = await this.client.hgetall(
-            redisKeys.player(this.gameId, teamId, playerId)
-          )
-          return {
+  protected getTeams(teams: SnapshotTeam[]): TeamState[] {
+    return teams
+      .sort((left, right) => left.teamId.localeCompare(right.teamId))
+      .map(({ teamId, teamHash, players }) => ({
+        teamId,
+        name: teamHash.name ?? "",
+        color: (teamHash.color ?? "#000000").toLowerCase(),
+        score: Number(teamHash.score ?? 0),
+        players: players
+          .sort((left, right) => left.playerId.localeCompare(right.playerId))
+          .map(({ playerId, playerHash }) => ({
             playerId,
             name: playerHash.name ?? "",
             ready: String(playerHash.ready ?? "0") === "1",
-          }
-        })
-    )
+          })),
+      }))
   }
 
   protected validate(state: Record<string, unknown>): GetGameResponse {

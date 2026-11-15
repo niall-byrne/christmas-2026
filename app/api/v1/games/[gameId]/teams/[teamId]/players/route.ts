@@ -2,6 +2,7 @@ import "server-only"
 import type { ApiEndpointInput } from "@/contracts/api"
 import { ApiEndpoint } from "@/lib/api/endpoint"
 import { gameIds } from "@/lib/game/ids"
+import { publishGameStateChanged } from "@/lib/game/publishState"
 import { redisKeys } from "@/lib/game/redisKeys"
 import { redisLookupKey } from "@/lib/game/redisLookupKey"
 import { addPlayerScript } from "@/lib/game/redisScripts/addPlayer"
@@ -25,6 +26,7 @@ class AddPlayerEndpoint extends ApiEndpoint<
   protected async execute({
     params,
     body,
+    logger,
   }: ApiEndpointInput<
     z.output<typeof TeamPlayersParamsSchema>,
     z.output<typeof AddPlayerBodySchema>
@@ -63,6 +65,8 @@ class AddPlayerEndpoint extends ApiEndpoint<
     ) {
       throw new Error("Add-player script returned an unexpected result")
     }
+
+    await publishGameStateChanged(params.gameId, logger)
 
     return {
       status: 201,

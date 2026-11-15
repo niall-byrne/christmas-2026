@@ -2,7 +2,9 @@ import "server-only"
 import type { ApiEndpointInput } from "@/contracts/api"
 import { ApiEndpoint } from "@/lib/api/endpoint"
 import { redisKeys } from "@/lib/game/redisKeys"
+import { publishGameStateChanged } from "@/lib/game/publishState"
 import { executeGameScript } from "@/lib/game/redisScripts/execute"
+import { GAME_SCRIPT_RESULT } from "@/lib/game/redisScripts/resultCodes"
 import { setReadyStatusScript } from "@/lib/game/redisScripts/setReadyStatus"
 import { RedisClient } from "@/lib/redis/client"
 import { GameParamsSchema } from "@/schemas/gameData/game"
@@ -18,6 +20,7 @@ class MarkPlayerReadyEndpoint extends ApiEndpoint<typeof ReadyParamsSchema> {
 
   protected async execute({
     params,
+    logger,
   }: ApiEndpointInput<z.output<typeof ReadyParamsSchema>, unknown>) {
     const client = RedisClient.getClient()
     const gameKey = redisKeys.game(params.gameId)
@@ -28,12 +31,16 @@ class MarkPlayerReadyEndpoint extends ApiEndpoint<typeof ReadyParamsSchema> {
       params.playerId
     )
 
-    await executeGameScript(
+    const result = await executeGameScript(
       client,
       setReadyStatusScript,
       [gameKey, teamKey, playerKey],
       ["1"]
     )
+
+    if (result[0] !== GAME_SCRIPT_RESULT.NO_OP) {
+      await publishGameStateChanged(params.gameId, logger)
+    }
 
     return {
       status: 200,
@@ -52,6 +59,7 @@ class MarkPlayerNotReadyEndpoint extends ApiEndpoint<typeof ReadyParamsSchema> {
 
   protected async execute({
     params,
+    logger,
   }: ApiEndpointInput<z.output<typeof ReadyParamsSchema>, unknown>) {
     const client = RedisClient.getClient()
     const gameKey = redisKeys.game(params.gameId)
@@ -62,12 +70,16 @@ class MarkPlayerNotReadyEndpoint extends ApiEndpoint<typeof ReadyParamsSchema> {
       params.playerId
     )
 
-    await executeGameScript(
+    const result = await executeGameScript(
       client,
       setReadyStatusScript,
       [gameKey, teamKey, playerKey],
       ["0"]
     )
+
+    if (result[0] !== GAME_SCRIPT_RESULT.NO_OP) {
+      await publishGameStateChanged(params.gameId, logger)
+    }
 
     return {
       status: 200,
