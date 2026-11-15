@@ -20,4 +20,13 @@ describe("ApiRouteError", () => {
     expect(error.statusCode).toBe(404)
     expect(error.message).toBe("Game is missing")
   })
+
+  it("preserves response headers for rate-limited requests", () => {
+    const error = new ApiRouteError(ApiErrorCode.RATE_LIMITED, 429, undefined, {
+      "Retry-After": "900",
+    })
+
+    expect(error.statusCode).toBe(429)
+    expect(error.headers).toEqual({ "Retry-After": "900" })
+  })
 })

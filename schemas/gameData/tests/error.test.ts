@@ -18,6 +18,7 @@ describe("ERROR_MESSAGES", () => {
     [ApiErrorCode.INVALID_SCORE_DELTA, "Invalid delta"],
     [ApiErrorCode.INVALID_PLAYER_NAME, "Invalid name"],
     [ApiErrorCode.INCORRECT_GAME_PASSWORD, "Incorrect game password"],
+    [ApiErrorCode.RATE_LIMITED, "Too many requests"],
     [ApiErrorCode.UNAUTHORIZED, "Authentication required"],
     [ApiErrorCode.GAME_NOT_FOUND, "Game not found"],
     [ApiErrorCode.TEAM_NOT_FOUND, "Team not found"],

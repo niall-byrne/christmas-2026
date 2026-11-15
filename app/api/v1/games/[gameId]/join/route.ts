@@ -4,6 +4,7 @@ import { ApiErrorCode } from "@/contracts/gameData"
 import { Authorization } from "@/lib/api/auth"
 import { ApiRouteError } from "@/lib/api/error/endpoint"
 import { ApiEndpoint } from "@/lib/api/endpoint"
+import { gameAuthRateLimiter } from "@/lib/game/joinRateLimit"
 import { gamePasswords } from "@/lib/game/password"
 import { redisKeys } from "@/lib/game/redisKeys"
 import { RedisClient } from "@/lib/redis/client"
@@ -21,10 +22,13 @@ class JoinGameEndpoint extends ApiEndpoint<
   protected async execute({
     params,
     body,
+    request,
   }: ApiEndpointInput<
     z.output<typeof GameParamsSchema>,
     z.output<typeof JoinGameBodySchema>
   >) {
+    await gameAuthRateLimiter.enforce(request)
+
     const client = RedisClient.getClient()
     const gameKey = redisKeys.game(params.gameId)
     const storedHash = await client.hget(gameKey, "password_hash")
@@ -33,7 +37,7 @@ class JoinGameEndpoint extends ApiEndpoint<
       throw new ApiRouteError(ApiErrorCode.GAME_NOT_FOUND, 404)
     }
 
-    if (!gamePasswords.verify(body.password, storedHash)) {
+    if (!(await gamePasswords.verify(body.password, storedHash))) {
       throw new ApiRouteError(ApiErrorCode.INCORRECT_GAME_PASSWORD, 401)
     }
 

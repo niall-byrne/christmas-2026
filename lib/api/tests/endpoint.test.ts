@@ -332,6 +332,33 @@ describe("ApiEndpoint", () => {
     })
   })
 
+  describe("when an API route error includes response headers", () => {
+    let response: Response
+
+    beforeEach(async () => {
+      response = await callHandle(
+        {
+          requiresAuth: false,
+          execute: async () => {
+            throw new ApiRouteError(ApiErrorCode.RATE_LIMITED, 429, undefined, {
+              "Retry-After": "900",
+            })
+          },
+        },
+        new Request(`${TEST_FIXTURES.url}/limited`)
+      )
+    })
+
+    it("includes the retry delay in the error response", async () => {
+      expect(response.status).toBe(429)
+      expect(response.headers.get("Retry-After")).toBe("900")
+      await expect(response.json()).resolves.toEqual({
+        message: "Too many requests",
+        error: ApiErrorCode.RATE_LIMITED,
+      })
+    })
+  })
+
   describe("when ApiEndpoint.handle calls execute and it throws an unexpected error", () => {
     let response: Response
     let logSpy: ReturnType<typeof vi.spyOn>

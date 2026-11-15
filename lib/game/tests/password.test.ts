@@ -24,8 +24,8 @@ describe("game passwords", () => {
   describe("when hashPassword is called", () => {
     let passwordHash: string
 
-    beforeEach(() => {
-      passwordHash = gamePasswords.hash(
+    beforeEach(async () => {
+      passwordHash = await gamePasswords.hash(
         TEST_FIXTURES.password,
         TEST_FIXTURES.salt
       )
@@ -40,8 +40,11 @@ describe("game passwords", () => {
     describe("when verifyPassword is called with the matching password", () => {
       let isVerified: boolean
 
-      beforeEach(() => {
-        isVerified = gamePasswords.verify(TEST_FIXTURES.password, passwordHash)
+      beforeEach(async () => {
+        isVerified = await gamePasswords.verify(
+          TEST_FIXTURES.password,
+          passwordHash
+        )
       })
 
       it("returns true", () => {
@@ -52,8 +55,8 @@ describe("game passwords", () => {
     describe("when verifyPassword is called with a different password", () => {
       let isVerified: boolean
 
-      beforeEach(() => {
-        isVerified = gamePasswords.verify(
+      beforeEach(async () => {
+        isVerified = await gamePasswords.verify(
           TEST_FIXTURES.wrongPassword,
           passwordHash
         )
@@ -68,8 +71,8 @@ describe("game passwords", () => {
   describe("when verifyPassword is called with a malformed stored hash", () => {
     let isVerified: boolean
 
-    beforeEach(() => {
-      isVerified = gamePasswords.verify(
+    beforeEach(async () => {
+      isVerified = await gamePasswords.verify(
         TEST_FIXTURES.password,
         TEST_FIXTURES.malformedHash
       )
