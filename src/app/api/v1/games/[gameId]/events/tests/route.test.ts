@@ -2,9 +2,9 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { NextRequest } from "next/server"
-import { Authorization } from "@/lib/api/auth"
+import { Authorization } from "@/game/api/auth"
 import { GET } from "@/app/api/v1/games/[gameId]/events/route"
-import { redisBroker } from "@/lib/redis/broker"
+import { redisBroker } from "@/redis/api/broker"
 
 describe("GET /api/v1/games/:gameId/events", () => {
   const TEST_FIXTURES = {

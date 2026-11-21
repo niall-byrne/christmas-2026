@@ -1,6 +1,6 @@
 import Redis from "ioredis"
-import { gameStateChannel } from "@/lib/game/realtimeChannel"
-import { redisKeys } from "@/lib/game/redisKeys"
+import { gameStateChannel } from "@/game/api/redis/gameStateChannel"
+import { redisKeys } from "@/game/api/redis/redisKeys"
 
 export const E2E_REDIS_URL = "redis://127.0.0.1:6379/15"
 

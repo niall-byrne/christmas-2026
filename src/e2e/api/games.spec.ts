@@ -4,7 +4,7 @@ import {
   ApiErrorCode,
   GAME_COMPLETE_LEVEL,
   GAME_COMPLETE_TTL_SECONDS,
-} from "@/contracts/gameData"
+} from "@/contracts/game/api/data"
 import {
   captureResponse,
   createApiContext,
@@ -26,7 +26,7 @@ import {
 } from "@/e2e/resources/redis"
 import { TEST_FIXTURES } from "@/e2e/resources/fixtures"
 import { createTeam } from "@/e2e/resources/teams"
-import { redisKeys } from "@/lib/game/redisKeys"
+import { redisKeys } from "@/game/api/redis/redisKeys"
 
 const RATE_LIMITED_CLIENT_IP = "2001:db8::1"
 

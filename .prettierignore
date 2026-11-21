@@ -1,5 +1,5 @@
 dist/
-src/components/ui
+src/ui/components/primitives
 node_modules/
 .next/
 .turbo/

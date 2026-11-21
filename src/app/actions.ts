@@ -3,9 +3,9 @@
 import {
   realtimeMessageChannelSchema,
   RealtimeChannelMessage,
-} from "@/schemas/redis/channelMessage"
-import { realtimeChannel } from "@/lib/game/realtimeChannel"
-import { redisBroker } from "@/lib/redis/broker"
+} from "@/schemas/realtime/channelMessage"
+import { realtimeChannel } from "@/realtime/channel"
+import { redisBroker } from "@/redis/api/broker"
 
 export async function sendMessage(
   text: string

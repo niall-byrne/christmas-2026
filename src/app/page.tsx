@@ -1,4 +1,4 @@
-import { LiveFeed } from "@/components/realtime/example"
+import { LiveFeed } from "@/ui/components/realtime/example"
 
 export default function HomePage() {
   return (

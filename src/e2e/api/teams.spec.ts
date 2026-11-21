@@ -1,6 +1,6 @@
 import { expect, test } from "@/e2e/resources/test"
 import type { APIRequestContext } from "@playwright/test"
-import { ApiErrorCode } from "@/contracts/gameData"
+import { ApiErrorCode } from "@/contracts/game/api/data"
 import {
   captureResponse,
   createApiContext,
@@ -19,7 +19,7 @@ import {
 } from "@/e2e/resources/redis"
 import { TEST_FIXTURES } from "@/e2e/resources/fixtures"
 import { createTeam } from "@/e2e/resources/teams"
-import { redisKeys } from "@/lib/game/redisKeys"
+import { redisKeys } from "@/game/api/redis/redisKeys"
 
 const MISSING_ENTITY_ID = "000000000000000000000000"
 
