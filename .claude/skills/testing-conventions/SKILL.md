@@ -9,7 +9,7 @@ description: Project conventions for writing and running Vitest unit/component t
 
 - **Unit & Component Tests (`Vitest`):** Place inside a `tests/` subfolder colocated within the module being tested (`<module>/tests/*.test.ts` or `<module>/tests/*.test.tsx`). Run via `npm test`.
 - **Integration Tests (`Vitest`):** Name workflow tests spanning multiple components or public surfaces `<name>.integration.test.ts`; Vitest is configured to discover this suffix. Keep them colocated under the relevant feature's `tests/` directory and run via `npm test`.
-- **End-to-End Tests (`Playwright`):** Place under the configured `e2e/` test directory, including endpoint-specific subdirectories. Run via `npm run test:e2e` (automatically starts and stops the `redis` container if not already running).
+- **End-to-End Tests (`Playwright`):** Place under the configured `src/e2e/` test directory, including endpoint-specific subdirectories. Run via `npm run test:e2e` (automatically starts and stops the `redis` container if not already running).
 
 ## 2. Import & Code Rules
 
@@ -45,5 +45,5 @@ description: Project conventions for writing and running Vitest unit/component t
 ## 6. Workflow
 
 1. Inspect `git status` and `git diff` for new or modified code.
-2. Write or update Vitest tests in `<module>/tests/*.test.ts(x)` and Playwright tests under `e2e/`, covering valid behavior, edge cases, and error states following the Zero-Slop Principle.
+2. Write or update Vitest tests in `<module>/tests/*.test.ts(x)` and Playwright tests under `src/e2e/`, covering valid behavior, edge cases, and error states following the Zero-Slop Principle.
 3. Run `npm test` and, when API routes or SSE flows change, `npm run test:e2e` until green.

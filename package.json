@@ -7,7 +7,7 @@
     "build": "next build",
     "dev": "trap 'docker compose down' EXIT INT TERM; docker compose up -d --wait redis && next dev",
     "dev:next": "next dev",
-    "game:create": "tsx cli/create-game/index.ts",
+    "game:create": "tsx src/cli/create-game/index.ts",
     "format:check": "prettier --check .",
     "format": "prettier --write .",
     "lint": "eslint",

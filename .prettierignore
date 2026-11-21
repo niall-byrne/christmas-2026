@@ -1,5 +1,5 @@
 dist/
-components/ui
+src/components/ui
 node_modules/
 .next/
 .turbo/

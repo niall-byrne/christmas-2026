@@ -4,7 +4,7 @@ import { E2E_REDIS_URL } from "@/e2e/resources/redis"
 const port = 3000
 
 export default defineConfig({
-  testDir: "./e2e",
+  testDir: "./src/e2e",
   fullyParallel: false,
   workers: 1,
   reporter: "list",
