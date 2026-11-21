@@ -9,6 +9,7 @@ export default defineConfig({
   test: {
     environment: "jsdom",
     setupFiles: ["./vitest.setup.ts"],
+    include: [...configDefaults.include, "**/*.integration.test.ts"],
     exclude: [...configDefaults.exclude, "e2e/**"],
   },
 })

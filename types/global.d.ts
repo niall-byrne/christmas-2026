@@ -5,6 +5,7 @@ declare global {
 
   namespace NodeJS {
     interface ProcessEnv {
+      HOST?: string
       NEXT_PUBLIC_GAME_CLIENT_LOGGING?: "true" | "false"
     }
   }
