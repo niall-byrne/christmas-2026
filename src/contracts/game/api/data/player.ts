@@ -4,17 +4,32 @@ export interface PlayerState {
   ready: boolean
 }
 
-// POST /api/v1/games/[gameId]/teams/[teamId]/players
-export interface AddPlayerRequest {
-  name: string
-}
-
-export interface AddPlayerResponse {
+export interface UnassignedPlayerState {
   playerId: string
   name: string
+  ready: false
 }
 
-// DELETE /api/v1/games/[gameId]/teams/[teamId]/players/[playerId]
+// POST /api/v1/games/[gameId]/players
+export interface ClaimPlayerRequest {
+  name: string
+}
+
+export interface ClaimPlayerResponse {
+  playerId: string
+  name: string
+  teamId: string | null
+}
+
+// POST /api/v1/games/[gameId]/teams/[teamId]/players
+export interface AssignPlayerResponse {
+  playerId: string
+  name: string
+  teamId: string
+  ready: boolean
+}
+
+// DELETE /api/v1/games/[gameId]/players
 export interface RemovePlayerResponse {
   message: string
 }

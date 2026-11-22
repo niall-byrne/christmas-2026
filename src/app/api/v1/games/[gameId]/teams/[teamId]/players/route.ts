@@ -1,1 +1,1 @@
-export { POST } from "@/game/api/endpoints/players"
+export { DELETE, POST } from "@/game/api/endpoints/assignPlayer"

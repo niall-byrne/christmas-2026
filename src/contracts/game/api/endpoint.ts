@@ -1,4 +1,5 @@
 import type { ApiEndpointLogger } from "@/contracts/game/api/logger"
+import type { AuthorizedPlayerSession } from "@/contracts/game/api/auth"
 
 export type ApiEndpointResult<TData = unknown> =
   | {
@@ -17,4 +18,5 @@ export interface ApiEndpointInput<Params, Body> {
   body: Body
   request: Request
   logger: ApiEndpointLogger
+  playerIdentity: AuthorizedPlayerSession | undefined
 }

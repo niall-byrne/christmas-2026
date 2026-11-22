@@ -1,5 +1,6 @@
 import type { CardState } from "@/contracts/game/api/data/card"
 import type { TeamState } from "@/contracts/game/api/data/team"
+import type { UnassignedPlayerState } from "@/contracts/game/api/data/player"
 
 type LessThan<
   N extends number,
@@ -36,6 +37,7 @@ interface BaseGameResponse {
   createdAt: string
   recipients: string[]
   teams: TeamState[]
+  unassignedPlayers: UnassignedPlayerState[]
 }
 
 export type GetGameResponse =

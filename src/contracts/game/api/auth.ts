@@ -1,11 +1,17 @@
 export type AuthorizationErrorReason =
-  | "MISSING_COOKIE"
-  | "MALFORMED_TOKEN"
-  | "INVALID_SIGNATURE"
   | "GAME_ID_MISMATCH"
+  | "INVALID_SIGNATURE"
+  | "MALFORMED_TOKEN"
+  | "MISSING_COOKIE"
+  | "PLAYER_ID_MISMATCH"
 
 export interface AuthorizedSession {
   gameId: string
+}
+
+export interface AuthorizedPlayerSession {
+  gameId: string
+  playerId: string
 }
 
 export interface AuthorizationHeaderOptionProps {
