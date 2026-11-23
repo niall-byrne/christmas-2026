@@ -8,7 +8,10 @@ import type {
   ApiEndpointInput,
   ApiEndpointResult,
 } from "@/contracts/game/api/endpoint"
-import { InvalidGameStateError } from "@/game/api/error/state"
+import {
+  INVALID_GAME_STATE_REASON,
+  InvalidGameStateError,
+} from "@/game/api/error/state"
 import { ApiRouteError } from "@/game/api/error/endpoint"
 import { Authorization } from "@/game/api/auth"
 import { ApiEndpointBase } from "@/game/api/endpoints/bases/apiEndpointBase"
@@ -21,7 +24,7 @@ type TestEndpointOptions<
 > = {
   paramsSchema?: TParams
   bodySchema?: TBody
-  requiresAuth?: boolean
+  requiresAnonymousSession?: boolean
   execute: (
     input: ApiEndpointInput<z.output<TParams>, z.output<TBody>>
   ) => Promise<ApiEndpointResult<TData>> | ApiEndpointResult<TData>
@@ -34,7 +37,7 @@ class TestApiEndpoint<
 > extends ApiEndpointBase<TParams, TBody, TData> {
   protected override paramsSchema?: TParams
   protected override bodySchema?: TBody
-  protected override requiresAuth: boolean
+  protected override requiresAnonymousSession: boolean
 
   private readonly testExecute: TestEndpointOptions<
     TParams,
@@ -46,7 +49,7 @@ class TestApiEndpoint<
     super()
     this.paramsSchema = options.paramsSchema
     this.bodySchema = options.bodySchema
-    this.requiresAuth = options.requiresAuth ?? true
+    this.requiresAnonymousSession = options.requiresAnonymousSession ?? true
     this.testExecute = options.execute
   }
 
@@ -129,7 +132,7 @@ describe("ApiEndpointBase", () => {
       )
     })
 
-    it("accepts the session cookie and returns the endpoint's JSON result", async () => {
+    it("accepts the game session and returns the endpoint's JSON result", async () => {
       expect(response.status).toBe(200)
       await expect(response.json()).resolves.toEqual({
         ok: true,
@@ -139,13 +142,13 @@ describe("ApiEndpointBase", () => {
     })
   })
 
-  describe("when BaseApiEndpoint.handle is called without requiring authentication or a session cookie", () => {
+  describe("when BaseApiEndpoint.handle is called without requiring authentication or an anonymous session", () => {
     let response: Response
 
     beforeEach(async () => {
       response = await callHandle(
         {
-          requiresAuth: false,
+          requiresAnonymousSession: false,
           execute: async () => new Response("stream-data", { status: 202 }),
         },
         new Request(`${TEST_FIXTURES.url}/stream`)
@@ -158,7 +161,7 @@ describe("ApiEndpointBase", () => {
     })
   })
 
-  describe("when BaseApiEndpoint.handle is called with required authentication but no session cookie", () => {
+  describe("when BaseApiEndpoint.handle is called with required authentication but no session", () => {
     let response: Response
 
     beforeEach(async () => {
@@ -179,13 +182,13 @@ describe("ApiEndpointBase", () => {
     })
   })
 
-  describe("when BaseApiEndpoint.handle is called with a session cookie but authentication is not required", () => {
+  describe("when BaseApiEndpoint.handle is called with a session but authentication is not required", () => {
     let response: Response
 
     beforeEach(async () => {
       response = await callHandle(
         {
-          requiresAuth: false,
+          requiresAnonymousSession: false,
           execute: async () => ({ status: 200, data: { ok: true } }),
         },
         new Request(`${TEST_FIXTURES.url}/optional-auth`, {
@@ -198,7 +201,7 @@ describe("ApiEndpointBase", () => {
       )
     })
 
-    it("calls execute without requiring or rejecting the session cookie", async () => {
+    it("calls execute without requiring or rejecting the optional session", async () => {
       expect(response.status).toBe(200)
       await expect(response.json()).resolves.toEqual({ ok: true })
     })
@@ -237,7 +240,7 @@ describe("ApiEndpointBase", () => {
               error: ApiErrorCode.INVALID_GAME_ID,
             }),
           }),
-          requiresAuth: false,
+          requiresAnonymousSession: false,
           execute: async () => ({ status: 200, data: { ok: true } }),
         },
         new Request(TEST_FIXTURES.url),
@@ -261,7 +264,7 @@ describe("ApiEndpointBase", () => {
       response = await callHandle(
         {
           bodySchema: z.object({ name: z.string() }),
-          requiresAuth: false,
+          requiresAnonymousSession: false,
           execute: async () => ({ status: 200, data: { ok: true } }),
         },
         new Request(TEST_FIXTURES.url, {
@@ -289,7 +292,7 @@ describe("ApiEndpointBase", () => {
           bodySchema: z.object({
             name: z.string({ error: ApiErrorCode.INVALID_GAME_NAME }),
           }),
-          requiresAuth: false,
+          requiresAnonymousSession: false,
           execute: async () => ({ status: 200, data: { ok: true } }),
         },
         new Request(TEST_FIXTURES.url, {
@@ -314,7 +317,7 @@ describe("ApiEndpointBase", () => {
     beforeEach(async () => {
       response = await callHandle(
         {
-          requiresAuth: false,
+          requiresAnonymousSession: false,
           execute: async () => {
             throw new ApiRouteError(ApiErrorCode.GAME_NOT_FOUND, 404)
           },
@@ -338,7 +341,7 @@ describe("ApiEndpointBase", () => {
     beforeEach(async () => {
       response = await callHandle(
         {
-          requiresAuth: false,
+          requiresAnonymousSession: false,
           execute: async () => {
             throw new ApiRouteError(ApiErrorCode.RATE_LIMITED, 429, undefined, {
               "Retry-After": "900",
@@ -369,7 +372,7 @@ describe("ApiEndpointBase", () => {
         .mockImplementation(() => ({}) as never)
       response = await callHandle(
         {
-          requiresAuth: false,
+          requiresAnonymousSession: false,
           execute: async () => {
             throw new Error("boom")
           },
@@ -395,11 +398,13 @@ describe("ApiEndpointBase", () => {
     beforeEach(async () => {
       vi.stubEnv("LOG_LEVEL", "error")
       vi.stubEnv("SERVICE_NAME", "test-service")
-      stateError = new InvalidGameStateError("INVALID_GAME_DATA")
+      stateError = new InvalidGameStateError(
+        INVALID_GAME_STATE_REASON.INVALID_GAME_DATA
+      )
       logSpy = vi.spyOn(console, "error").mockImplementation(() => {})
       response = await callHandle(
         {
-          requiresAuth: false,
+          requiresAnonymousSession: false,
           paramsSchema: z.object({ gameId: z.string() }),
           execute: async () => {
             throw stateError
@@ -449,7 +454,7 @@ describe("ApiEndpointBase", () => {
     beforeEach(async () => {
       response = await callHandle(
         {
-          requiresAuth: false,
+          requiresAnonymousSession: false,
           execute: async () => {
             throw new Error("JSON processing failed")
           },

@@ -1,4 +1,5 @@
 import "server-only"
+import { GAME_SCRIPT_RESULT } from "@/game/api/redis/scripts/resultCodes"
 
 export const createGameScript = `
   local gameKey = KEYS[1]
@@ -35,5 +36,5 @@ export const createGameScript = `
     return gameResult
   end
 
-  return "OK"
+  return "${GAME_SCRIPT_RESULT.SUCCESS}"
 `

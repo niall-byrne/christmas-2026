@@ -20,6 +20,7 @@ import {
 import { TEST_FIXTURES } from "@/e2e/resources/fixtures"
 import { createTeam } from "@/e2e/resources/teams"
 import { redisKeys } from "@/game/api/redis/redisKeys"
+import { GAME_STATE_CHANGED_EVENT_TYPE } from "@/schemas/game/redis/gameStateEvent"
 
 const MISSING_ENTITY_ID = "000000000000000000000000"
 
@@ -280,7 +281,7 @@ test.describe("Team endpoints", () => {
         test("publishes the complete changed game snapshot", () => {
           expect(responseStatus).toBe(201)
           expect(event).toEqual({
-            type: "game.state.changed",
+            type: GAME_STATE_CHANGED_EVENT_TYPE,
             data: state,
           })
           expect(state.revision).toBe(beforeRevision + 1)
@@ -511,7 +512,7 @@ test.describe("Team endpoints", () => {
         test("publishes the complete changed game snapshot", () => {
           expect(responseStatus).toBe(200)
           expect(event).toEqual({
-            type: "game.state.changed",
+            type: GAME_STATE_CHANGED_EVENT_TYPE,
             data: state,
           })
           expect(state.revision).toBe(beforeRevision + 1)
@@ -593,6 +594,111 @@ test.describe("Team endpoints", () => {
           error: ApiErrorCode.GAME_NOT_FOUND,
         })
       })
+    })
+  })
+
+  test.describe("DELETE /api/v1/games/:gameId/teams/:teamId", () => {
+    let session: APIRequestContext | undefined
+    let unauthenticated: APIRequestContext | undefined
+    let eventSubscription:
+      Awaited<ReturnType<typeof subscribeToGameStateEvents>> | undefined
+    let scenario: {
+      gameId: string
+      teamId: string
+      playerId: string
+      before: Awaited<ReturnType<typeof readGame>>
+    }
+
+    test.beforeEach(async ({ playwright }) => {
+      const fixture = await createGameSession(playwright)
+      session = fixture.session
+      unauthenticated = await createApiContext(playwright)
+      const { teamId } = await createTeam(session, fixture.gameId)
+      const claim = await session.post(
+        `/api/v1/games/${fixture.gameId}/players`,
+        { data: TEST_FIXTURES.player }
+      )
+      expect(claim.status()).toBe(201)
+      const { playerId } = await claim.json()
+      const assignment = await session.post(
+        `/api/v1/games/${fixture.gameId}/teams/${teamId}/players`
+      )
+      expect(assignment.status()).toBe(200)
+      const ready = await session.post(
+        `/api/v1/games/${fixture.gameId}/players/ready`
+      )
+      expect(ready.status()).toBe(200)
+      scenario = {
+        gameId: fixture.gameId,
+        teamId,
+        playerId,
+        before: await readGame(session, fixture.gameId),
+      }
+    })
+
+    test.afterEach(async () => {
+      await eventSubscription?.close()
+      eventSubscription = undefined
+      await session?.dispose()
+      await unauthenticated?.dispose()
+    })
+
+    test("requires a valid room session", async () => {
+      const activeUnauthenticated = requireGameSession(unauthenticated)
+      const response = await activeUnauthenticated.delete(
+        `/api/v1/games/${scenario.gameId}/teams/${scenario.teamId}`
+      )
+
+      expect(response.status()).toBe(401)
+      expect(await response.json()).toMatchObject({
+        error: ApiErrorCode.UNAUTHORIZED,
+      })
+    })
+
+    test("deletes the team, unassigns its players, and publishes one updated snapshot", async () => {
+      const activeSession = requireGameSession(session)
+      eventSubscription = await subscribeToGameStateEvents(scenario.gameId)
+
+      const response = await activeSession.delete(
+        `/api/v1/games/${scenario.gameId}/teams/${scenario.teamId}`
+      )
+      const state = await readGame(activeSession, scenario.gameId)
+      const event = await eventSubscription.nextMessage()
+
+      expect(response.status()).toBe(200)
+      expect(await response.json()).toMatchObject({
+        teamId: scenario.teamId,
+        message: "Team deleted",
+      })
+      expect(state.revision).toBe(scenario.before.revision + 1)
+      expect(state.teams).toEqual([])
+      expect(state.unassignedPlayers).toEqual([
+        {
+          playerId: scenario.playerId,
+          name: TEST_FIXTURES.player.name,
+          ready: false,
+        },
+      ])
+      expect(event).toEqual({
+        type: GAME_STATE_CHANGED_EVENT_TYPE,
+        data: state,
+      })
+    })
+
+    test("returns team not found when the requested team does not exist", async () => {
+      const activeSession = requireGameSession(session)
+
+      const response = await activeSession.delete(
+        `/api/v1/games/${scenario.gameId}/teams/${MISSING_ENTITY_ID}`
+      )
+
+      expect(response.status()).toBe(404)
+      expect(await response.json()).toMatchObject({
+        error: ApiErrorCode.TEAM_NOT_FOUND,
+      })
+      expect(await readGame(activeSession, scenario.gameId)).toEqual(
+        scenario.before
+      )
     })
   })
 })

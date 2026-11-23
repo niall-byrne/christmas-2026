@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest"
 import { gameStateChannel } from "@/game/api/redis/gameStateChannel"
 import { RedisChannel } from "@/redis/shared/channel"
-import { gameEventSchema } from "@/schemas/game/redis/gameStateEvent"
+import {
+  GAME_STATE_CHANGED_EVENT_TYPE,
+  gameEventSchema,
+} from "@/schemas/game/redis/gameStateEvent"
 
 describe("gameStateChannel", () => {
   const TEST_FIXTURES = {
@@ -20,7 +23,7 @@ describe("gameStateChannel", () => {
     expect(channel.schema).toBe(gameEventSchema)
     expect(
       channel.schema.safeParse({
-        type: "game.state.changed",
+        type: GAME_STATE_CHANGED_EVENT_TYPE,
         data: {
           gameId: TEST_FIXTURES.gameId,
           name: "Holiday Game",
@@ -29,6 +32,7 @@ describe("gameStateChannel", () => {
           createdAt: TEST_FIXTURES.createdAt,
           recipients: [],
           teams: [],
+          unassignedPlayers: [],
         },
       }).success
     ).toBe(true)

@@ -326,6 +326,7 @@ describe("game schemas", () => {
       revision: 3,
       createdAt: "2026-11-12T21:50:00.123Z",
       recipients: ["Alice", "Bob"],
+      unassignedPlayers: [],
       teams: [
         {
           teamId: VALID_TEAM_ID,

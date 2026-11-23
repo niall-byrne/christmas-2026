@@ -8,6 +8,7 @@ import {
 import {
   captureResponse,
   createApiContext,
+  createPlayerApiContext,
   requireGameSession,
   sendRequest,
 } from "@/e2e/resources/api"
@@ -17,7 +18,7 @@ import {
   createGameSession,
   readGame,
 } from "@/e2e/resources/games"
-import { addPlayer } from "@/e2e/resources/players"
+import { addPlayer, claimPlayer } from "@/e2e/resources/players"
 import {
   createTestRedisClient,
   deleteGameRecord,
@@ -27,6 +28,7 @@ import {
 import { TEST_FIXTURES } from "@/e2e/resources/fixtures"
 import { createTeam } from "@/e2e/resources/teams"
 import { redisKeys } from "@/game/api/redis/redisKeys"
+import { GAME_STATE_CHANGED_EVENT_TYPE } from "@/schemas/game/redis/gameStateEvent"
 
 const RATE_LIMITED_CLIENT_IP = "2001:db8::1"
 
@@ -538,7 +540,7 @@ test.describe("Game endpoints", () => {
         test("publishes the complete updated game snapshot", () => {
           expect(responseStatus).toBe(200)
           expect(event).toEqual({
-            type: "game.state.changed",
+            type: GAME_STATE_CHANGED_EVENT_TYPE,
             data: state,
           })
           expect(state.revision).toBe(beforeRevision + 1)
@@ -605,11 +607,17 @@ test.describe("Game endpoints", () => {
           keyTTLs: { key: string; ttl: number }[]
         }
 
-        test.beforeEach(async () => {
+        test.beforeEach(async ({ playwright }) => {
           const activeSession = requireGameSession(session)
 
           const { teamId } = await createTeam(activeSession, scenario.gameId)
           await addPlayer(activeSession, scenario.gameId, teamId)
+          const unassignedSession = await createPlayerApiContext(
+            playwright,
+            activeSession
+          )
+          await claimPlayer(unassignedSession, scenario.gameId, "Bob")
+          await unassignedSession.dispose()
           const response = await activeSession.patch(
             `/api/v1/games/${scenario.gameId}`,
             { data: { level: GAME_COMPLETE_LEVEL } }

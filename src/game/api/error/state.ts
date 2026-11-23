@@ -1,5 +1,19 @@
+export const INVALID_GAME_STATE_REASON = {
+  COMMITTED_GAME_NOT_FOUND: "COMMITTED_GAME_NOT_FOUND",
+  INVALID_GAME_DATA: "INVALID_GAME_DATA",
+  INVALID_REDIS_CARD: "INVALID_REDIS_CARD",
+  INVALID_REDIS_HASH: "INVALID_REDIS_HASH",
+  INVALID_REDIS_PLAYER: "INVALID_REDIS_PLAYER",
+  INVALID_REDIS_SNAPSHOT: "INVALID_REDIS_SNAPSHOT",
+  INVALID_REDIS_TEAM: "INVALID_REDIS_TEAM",
+  INVALID_REDIS_TEAMS: "INVALID_REDIS_TEAMS",
+  INVALID_REDIS_UNASSIGNED_PLAYERS: "INVALID_REDIS_UNASSIGNED_PLAYERS",
+} as const
+
 export class InvalidGameStateError extends Error {
-  constructor(validationMessage = "INVALID_GAME_DATA") {
+  constructor(
+    validationMessage: string = INVALID_GAME_STATE_REASON.INVALID_GAME_DATA
+  ) {
     super(`Game state validation failed: ${validationMessage}`)
     this.name = "InvalidGameStateError"
     Object.setPrototypeOf(this, InvalidGameStateError.prototype)

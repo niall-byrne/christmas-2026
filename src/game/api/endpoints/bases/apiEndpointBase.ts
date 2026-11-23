@@ -4,11 +4,19 @@ import type {
   ApiEndpointInput,
   ApiEndpointResult,
 } from "@/contracts/game/api"
+import type { AuthorizedPlayerSession } from "@/contracts/game/api/auth"
+import { AUTHORIZATION_ERROR_REASON } from "@/contracts/game/api/auth"
 import { ApiErrorCode } from "@/contracts/game/api/data"
 import { AuthorizationError } from "@/game/api/error/auth"
-import { ApiRouteError } from "@/game/api/error/endpoint"
+import {
+  API_ENDPOINT_INVARIANT_REASON,
+  ApiEndpointInvariantError,
+  ApiRouteError,
+} from "@/game/api/error/endpoint"
 import { Authorization } from "@/game/api/auth"
 import { ApiLogger } from "@/game/api/logger"
+import { redisKeys } from "@/game/api/redis/redisKeys"
+import { RedisClient } from "@/redis/api/client"
 import { ERROR_MESSAGES } from "@/schemas/game/api"
 
 export abstract class ApiEndpointBase<
@@ -18,7 +26,8 @@ export abstract class ApiEndpointBase<
 > {
   protected paramsSchema?: TParams
   protected bodySchema?: TBody
-  protected requiresAuth = true
+  protected requiresAnonymousSession = true
+  protected requiresPlayerAuth = false
 
   private createErrorResponse(
     error: ApiErrorCode,
@@ -83,6 +92,46 @@ export abstract class ApiEndpointBase<
     })
   }
 
+  private createResponse(
+    result: ApiEndpointResult<TData>,
+    playerIdentity: AuthorizedPlayerSession | undefined
+  ): Response {
+    const response =
+      result instanceof Response
+        ? result
+        : this.createJsonResponse(
+            result as Exclude<ApiEndpointResult<TData>, Response>
+          )
+    return this.refreshPlayerSession(response, playerIdentity)
+  }
+
+  private refreshPlayerSession(
+    response: Response,
+    playerIdentity: AuthorizedPlayerSession | undefined
+  ): Response {
+    if (
+      !playerIdentity ||
+      response.status >= 400 ||
+      response.headers.has("Set-Cookie")
+    ) {
+      return response
+    }
+
+    const headers = new Headers(response.headers)
+    headers.set(
+      "Set-Cookie",
+      Authorization.playerResponseHeaderFactory(
+        playerIdentity.gameId,
+        playerIdentity.playerId
+      )
+    )
+    return new Response(response.body, {
+      status: response.status,
+      statusText: response.statusText,
+      headers,
+    })
+  }
+
   protected abstract execute(
     input: ApiEndpointInput<z.output<TParams>, z.output<TBody>>
   ): Promise<ApiEndpointResult<TData>> | ApiEndpointResult<TData>
@@ -105,20 +154,17 @@ export abstract class ApiEndpointBase<
       })
 
       const params = this.parseParams(paramsValue)
-      this.authorize(request, paramsValue)
+      this.authorizeAnonymousSession(request, paramsValue)
+      const playerIdentity = await this.authorizePlayer(request, paramsValue)
       const body = await this.parseBody(request)
       const result = await this.execute({
         params,
         body: body as z.output<TBody>,
         request,
         logger,
+        playerIdentity,
       })
-      const response =
-        result instanceof Response
-          ? result
-          : this.createJsonResponse(
-              result as Exclude<ApiEndpointResult<TData>, Response>
-            )
+      const response = this.createResponse(result, playerIdentity)
 
       logger.info(
         `${request.method} ${new URL(request.url).pathname} ${response.status}`,
@@ -147,8 +193,8 @@ export abstract class ApiEndpointBase<
     return parsed.data
   }
 
-  private authorize(request: Request, params: unknown): void {
-    if (!this.requiresAuth) {
+  private authorizeAnonymousSession(request: Request, params: unknown): void {
+    if (!this.requiresAnonymousSession) {
       return
     }
 
@@ -156,11 +202,54 @@ export abstract class ApiEndpointBase<
       params && typeof params === "object" && "gameId" in params
         ? params.gameId
         : undefined
-    Authorization.authorizeRequest({
+    Authorization.authorizeAnonymousRequest({
       request,
       gameId: typeof gameId === "string" ? gameId : undefined,
       required: true,
     })
+  }
+
+  private async authorizePlayer(
+    request: Request,
+    params: unknown
+  ): Promise<AuthorizedPlayerSession | undefined> {
+    if (!this.requiresPlayerAuth) {
+      return undefined
+    }
+
+    const gameId =
+      params && typeof params === "object" && "gameId" in params
+        ? params.gameId
+        : undefined
+    if (typeof gameId !== "string") {
+      throw new ApiEndpointInvariantError(
+        API_ENDPOINT_INVARIANT_REASON.GAME_ID_REQUIRED_FOR_PLAYER_AUTH
+      )
+    }
+
+    const identity = Authorization.authorizePlayerRequest(request, gameId)
+    const client = RedisClient.getClient()
+    const [playerExists, playerIsClaimed] = await Promise.all([
+      client.exists(redisKeys.gamePlayer(gameId, identity.playerId)),
+      client.sismember(redisKeys.players(gameId), identity.playerId),
+    ])
+    if (playerExists !== 1 || playerIsClaimed !== 1) {
+      throw new AuthorizationError(
+        AUTHORIZATION_ERROR_REASON.PLAYER_ID_MISMATCH
+      )
+    }
+    return identity
+  }
+
+  protected requirePlayerIdentity(
+    identity: AuthorizedPlayerSession | undefined
+  ): AuthorizedPlayerSession {
+    if (!identity) {
+      throw new ApiEndpointInvariantError(
+        API_ENDPOINT_INVARIANT_REASON.PLAYER_IDENTITY_MISSING
+      )
+    }
+    return identity
   }
 
   private handleError(

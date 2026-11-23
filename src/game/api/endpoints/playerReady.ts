@@ -1,53 +1,45 @@
 import "server-only"
 import type { ApiEndpointInput } from "@/contracts/game/api"
-import { ApiEndpointBase } from "@/game/api/endpoints/bases/apiEndpointBase"
+import { GameMutationEndpointBase } from "@/game/api/endpoints/bases/gameMutationEndpointBase"
 import { redisKeys } from "@/game/api/redis/redisKeys"
-import { publishGameStateChanged } from "@/game/api/redis/publishState"
 import { executeGameScript } from "@/game/api/redis/scripts/execute"
-import { GAME_SCRIPT_RESULT } from "@/game/api/redis/scripts/resultCodes"
 import { setReadyStatusScript } from "@/game/api/redis/scripts/setReadyStatus"
 import { RedisClient } from "@/redis/api/client"
 import { GameParamsSchema } from "@/schemas/game/api/game"
 import { z } from "zod"
 
-const ReadyParamsSchema = GameParamsSchema.extend({
-  teamId: z.string().regex(/^[a-z0-9]{24}$/),
-  playerId: z.string().regex(/^[a-z0-9]{24}$/),
-})
-
-class MarkPlayerReadyEndpoint extends ApiEndpointBase<
-  typeof ReadyParamsSchema
+class MarkPlayerReadyEndpoint extends GameMutationEndpointBase<
+  typeof GameParamsSchema
 > {
-  protected override paramsSchema = ReadyParamsSchema
+  protected override paramsSchema = GameParamsSchema
+  protected override requiresPlayerAuth = true
 
   protected async execute({
     params,
     logger,
-  }: ApiEndpointInput<z.output<typeof ReadyParamsSchema>, unknown>) {
+    playerIdentity,
+  }: ApiEndpointInput<z.output<typeof GameParamsSchema>, unknown>) {
+    const player = this.requirePlayerIdentity(playerIdentity)
     const client = RedisClient.getClient()
-    const gameKey = redisKeys.game(params.gameId)
-    const teamKey = redisKeys.team(params.gameId, params.teamId)
-    const playerKey = redisKeys.player(
-      params.gameId,
-      params.teamId,
-      params.playerId
-    )
+    const playerKey = redisKeys.gamePlayer(params.gameId, player.playerId)
 
     const result = await executeGameScript(
       client,
       setReadyStatusScript,
-      [gameKey, teamKey, playerKey],
+      [
+        redisKeys.game(params.gameId),
+        playerKey,
+        redisKeys.teams(params.gameId),
+      ],
       ["1"]
     )
 
-    if (result[0] !== GAME_SCRIPT_RESULT.NO_OP) {
-      await publishGameStateChanged(params.gameId, logger)
-    }
+    await this.publishMutationState(params.gameId, logger, result)
 
     return {
       status: 200,
       data: {
-        playerId: params.playerId,
+        playerId: player.playerId,
         ready: true,
       },
     }
@@ -56,39 +48,38 @@ class MarkPlayerReadyEndpoint extends ApiEndpointBase<
 
 export const POST = new MarkPlayerReadyEndpoint().handle
 
-class MarkPlayerNotReadyEndpoint extends ApiEndpointBase<
-  typeof ReadyParamsSchema
+class MarkPlayerNotReadyEndpoint extends GameMutationEndpointBase<
+  typeof GameParamsSchema
 > {
-  protected override paramsSchema = ReadyParamsSchema
+  protected override paramsSchema = GameParamsSchema
+  protected override requiresPlayerAuth = true
 
   protected async execute({
     params,
     logger,
-  }: ApiEndpointInput<z.output<typeof ReadyParamsSchema>, unknown>) {
+    playerIdentity,
+  }: ApiEndpointInput<z.output<typeof GameParamsSchema>, unknown>) {
+    const player = this.requirePlayerIdentity(playerIdentity)
     const client = RedisClient.getClient()
-    const gameKey = redisKeys.game(params.gameId)
-    const teamKey = redisKeys.team(params.gameId, params.teamId)
-    const playerKey = redisKeys.player(
-      params.gameId,
-      params.teamId,
-      params.playerId
-    )
+    const playerKey = redisKeys.gamePlayer(params.gameId, player.playerId)
 
     const result = await executeGameScript(
       client,
       setReadyStatusScript,
-      [gameKey, teamKey, playerKey],
+      [
+        redisKeys.game(params.gameId),
+        playerKey,
+        redisKeys.teams(params.gameId),
+      ],
       ["0"]
     )
 
-    if (result[0] !== GAME_SCRIPT_RESULT.NO_OP) {
-      await publishGameStateChanged(params.gameId, logger)
-    }
+    await this.publishMutationState(params.gameId, logger, result)
 
     return {
       status: 200,
       data: {
-        playerId: params.playerId,
+        playerId: player.playerId,
         ready: false,
       },
     }

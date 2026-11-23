@@ -3,6 +3,7 @@
 import { createHmac } from "node:crypto"
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
 import type { AuthorizationErrorReason } from "@/contracts/game/api"
+import { AUTHORIZATION_ERROR_REASON } from "@/contracts/game/api/auth"
 import { ApiErrorCode } from "@/contracts/game/api/data"
 import { Authorization } from "@/game/api/auth"
 import {
@@ -13,32 +14,44 @@ import {
 describe("Authorization", () => {
   const GAME_ID = "a1b2c3d4e5f6g7h8i9j0k1l2"
   const OTHER_GAME_ID = "z9y8x7w6v5u4t3s2r1q0p9o8"
+  const PLAYER_ID = "m1n2b3v4c5x6z7l8k9j0h1g2"
 
   const TEST_FIXTURES = {
     secret: "super-secret-signing-key-for-tests-2026",
     altSecret: "different-signing-key-for-tamper-tests",
     gameId: GAME_ID,
     otherGameId: OTHER_GAME_ID,
-    cookieName: `${Authorization.SESSION_PREFIX}${GAME_ID}`,
-    cookiePrefix: `${Authorization.SESSION_PREFIX}${GAME_ID}=`,
+    playerId: PLAYER_ID,
+    sessionName: `${Authorization.SESSION_PREFIX}${GAME_ID}`,
+    sessionPrefix: `${Authorization.SESSION_PREFIX}${GAME_ID}=`,
     gamesUrl: "http://localhost:3000/api/v1/games",
     customMaxAge: 3600,
   } as const
 
-  function extractCookiePair(setCookieHeader: string): string {
-    const firstSegment = setCookieHeader.split(";").at(0)
+  function extractSessionPair(sessionHeader: string): string {
+    const firstSegment = sessionHeader.split(";").at(0)
     expect(firstSegment).toBeDefined()
     return firstSegment as string
   }
 
-  function issueCookieToken(
+  function issueSessionToken(
     gameId: string = TEST_FIXTURES.gameId,
     secret: string = TEST_FIXTURES.secret
   ): string {
     const header = Authorization.responseHeaderFactory(gameId, { secret })
-    const pair = extractCookiePair(header)
+    const pair = extractSessionPair(header)
     const eqIndex = pair.indexOf("=")
     return pair.slice(eqIndex + 1)
+  }
+
+  function issuePlayerSessionPair(
+    gameId: string = TEST_FIXTURES.gameId,
+    playerId: string = TEST_FIXTURES.playerId,
+    secret: string = TEST_FIXTURES.secret
+  ): string {
+    return extractSessionPair(
+      Authorization.playerResponseHeaderFactory(gameId, playerId, { secret })
+    )
   }
 
   function signRawPayload(encodedPayload: string): string {
@@ -48,9 +61,9 @@ describe("Authorization", () => {
     return `${encodedPayload}.${signature}`
   }
 
-  function createRequestWithCookie(cookieHeader?: string): Request {
+  function createRequestWithSession(sessionHeader?: string): Request {
     return new Request(TEST_FIXTURES.gamesUrl, {
-      headers: cookieHeader ? { cookie: cookieHeader } : undefined,
+      headers: sessionHeader ? { cookie: sessionHeader } : undefined,
     })
   }
 
@@ -82,8 +95,8 @@ describe("Authorization", () => {
         header = Authorization.responseHeaderFactory(TEST_FIXTURES.gameId)
       })
 
-      it("formats an HttpOnly SameSite=Lax cookie with 24h Max-Age and no Secure flag", () => {
-        expect(header.startsWith(TEST_FIXTURES.cookiePrefix)).toBe(true)
+      it("formats an HttpOnly SameSite=Lax session with 24h Max-Age and no Secure flag", () => {
+        expect(header.startsWith(TEST_FIXTURES.sessionPrefix)).toBe(true)
         expect(header).toContain("Path=/")
         expect(header).toContain("HttpOnly")
         expect(header).toContain("SameSite=Lax")
@@ -117,14 +130,14 @@ describe("Authorization", () => {
           maxAgeSeconds: TEST_FIXTURES.customMaxAge,
           secure: true,
         })
-        request = createRequestWithCookie(extractCookiePair(header))
+        request = createRequestWithSession(extractSessionPair(header))
       })
 
       it("applies custom maxAgeSeconds, secure flag, and signing secret", () => {
         expect(header).toContain(`Max-Age=${TEST_FIXTURES.customMaxAge}`)
         expect(header).toContain("; Secure")
         expect(() =>
-          Authorization.authorizeRequest({
+          Authorization.authorizeAnonymousRequest({
             request,
             gameId: TEST_FIXTURES.gameId,
             required: true,
@@ -150,7 +163,7 @@ describe("Authorization", () => {
     })
   })
 
-  describe("authorizeRequest", () => {
+  describe("authorizeAnonymousRequest", () => {
     describe("when required is false or omitted", () => {
       beforeEach(() => {
         vi.stubEnv("AUTH_SECRET", "")
@@ -158,36 +171,36 @@ describe("Authorization", () => {
 
       it("returns without throwing even when headers, gameId, and AUTH_SECRET are absent", () => {
         expect(() =>
-          Authorization.authorizeRequest({
-            request: createRequestWithCookie(),
+          Authorization.authorizeAnonymousRequest({
+            request: createRequestWithSession(),
             required: false,
           })
         ).not.toThrow()
 
         expect(() =>
-          Authorization.authorizeRequest({
-            request: createRequestWithCookie(),
+          Authorization.authorizeAnonymousRequest({
+            request: createRequestWithSession(),
           })
         ).not.toThrow()
       })
     })
 
-    describe("when request carries a valid signed session cookie", () => {
+    describe("when request carries a valid signed session", () => {
       let request: Request
 
       beforeEach(() => {
-        const setCookie = Authorization.responseHeaderFactory(
+        const sessionHeader = Authorization.responseHeaderFactory(
           TEST_FIXTURES.gameId
         )
-        const sessionPair = extractCookiePair(setCookie)
-        request = createRequestWithCookie(
+        const sessionPair = extractSessionPair(sessionHeader)
+        request = createRequestWithSession(
           `theme=dark; ${sessionPair}; analytics=1`
         )
       })
 
       it("authorizes the request without throwing", () => {
         expect(() =>
-          Authorization.authorizeRequest({
+          Authorization.authorizeAnonymousRequest({
             request,
             gameId: TEST_FIXTURES.gameId,
             required: true,
@@ -199,97 +212,97 @@ describe("Authorization", () => {
     describe("when request fails session validation (401 AuthorizationError)", () => {
       interface InvalidAuthCase {
         label: string
-        buildCookie: () => string | undefined
+        buildSession: () => string | undefined
         expectedReason: AuthorizationErrorReason
       }
 
       const INVALID_AUTH_CASES: InvalidAuthCase[] = [
         {
-          label: "missing Cookie header",
-          buildCookie: () => undefined,
-          expectedReason: "MISSING_COOKIE",
+          label: "missing session header",
+          buildSession: () => undefined,
+          expectedReason: AUTHORIZATION_ERROR_REASON.MISSING_COOKIE,
         },
         {
-          label: "cookie header with only unrelated cookies",
-          buildCookie: () => "theme=dark; sidebar=open",
-          expectedReason: "MISSING_COOKIE",
+          label: "session header with only unrelated cookies",
+          buildSession: () => "theme=dark; sidebar=open",
+          expectedReason: AUTHORIZATION_ERROR_REASON.MISSING_COOKIE,
         },
         {
-          label: "cookie with empty value",
-          buildCookie: () => `${TEST_FIXTURES.cookieName}=`,
-          expectedReason: "MISSING_COOKIE",
+          label: "session with empty value",
+          buildSession: () => `${TEST_FIXTURES.sessionName}=`,
+          expectedReason: AUTHORIZATION_ERROR_REASON.MISSING_COOKIE,
         },
         {
-          label: "cookie belonging to a different gameId",
-          buildCookie: () =>
-            extractCookiePair(
+          label: "session belonging to a different gameId",
+          buildSession: () =>
+            extractSessionPair(
               Authorization.responseHeaderFactory(TEST_FIXTURES.otherGameId)
             ),
-          expectedReason: "MISSING_COOKIE",
+          expectedReason: AUTHORIZATION_ERROR_REASON.MISSING_COOKIE,
         },
         {
           label: "token missing dot separator",
-          buildCookie: () => `${TEST_FIXTURES.cookieName}=not-a-dotted-token`,
-          expectedReason: "MALFORMED_TOKEN",
+          buildSession: () => `${TEST_FIXTURES.sessionName}=not-a-dotted-token`,
+          expectedReason: AUTHORIZATION_ERROR_REASON.MALFORMED_TOKEN,
         },
         {
           label: "token with extra dot segments",
-          buildCookie: () => `${TEST_FIXTURES.cookieName}=part1.part2.part3`,
-          expectedReason: "MALFORMED_TOKEN",
+          buildSession: () => `${TEST_FIXTURES.sessionName}=part1.part2.part3`,
+          expectedReason: AUTHORIZATION_ERROR_REASON.MALFORMED_TOKEN,
         },
         {
           label: "token with invalid base64url JSON payload",
-          buildCookie: () =>
-            `${TEST_FIXTURES.cookieName}=${signRawPayload("invalid-base64")}`,
-          expectedReason: "MALFORMED_TOKEN",
+          buildSession: () =>
+            `${TEST_FIXTURES.sessionName}=${signRawPayload("invalid-base64")}`,
+          expectedReason: AUTHORIZATION_ERROR_REASON.MALFORMED_TOKEN,
         },
         {
           label: "token with JSON payload missing gameId",
-          buildCookie: () => {
+          buildSession: () => {
             const emptyPayload = Buffer.from(
               JSON.stringify({}),
               "utf8"
             ).toString("base64url")
-            return `${TEST_FIXTURES.cookieName}=${signRawPayload(emptyPayload)}`
+            return `${TEST_FIXTURES.sessionName}=${signRawPayload(emptyPayload)}`
           },
-          expectedReason: "MALFORMED_TOKEN",
+          expectedReason: AUTHORIZATION_ERROR_REASON.MALFORMED_TOKEN,
         },
         {
           label: "token signed with a different secret",
-          buildCookie: () =>
-            `${TEST_FIXTURES.cookieName}=${issueCookieToken(
+          buildSession: () =>
+            `${TEST_FIXTURES.sessionName}=${issueSessionToken(
               TEST_FIXTURES.gameId,
               TEST_FIXTURES.altSecret
             )}`,
-          expectedReason: "INVALID_SIGNATURE",
+          expectedReason: AUTHORIZATION_ERROR_REASON.INVALID_SIGNATURE,
         },
         {
           label: "token with a tampered signature",
-          buildCookie: () => {
-            const tampered = `${issueCookieToken(TEST_FIXTURES.gameId).slice(0, -1)}X`
-            return `${TEST_FIXTURES.cookieName}=${tampered}`
+          buildSession: () => {
+            const tampered = `${issueSessionToken(TEST_FIXTURES.gameId).slice(0, -1)}X`
+            return `${TEST_FIXTURES.sessionName}=${tampered}`
           },
-          expectedReason: "INVALID_SIGNATURE",
+          expectedReason: AUTHORIZATION_ERROR_REASON.INVALID_SIGNATURE,
         },
         {
-          label: "valid token for another game copied into target game cookie",
-          buildCookie: () =>
-            `${TEST_FIXTURES.cookieName}=${issueCookieToken(
+          label: "valid token for another game copied into target game session",
+          buildSession: () =>
+            `${TEST_FIXTURES.sessionName}=${issueSessionToken(
               TEST_FIXTURES.otherGameId
             )}`,
-          expectedReason: "GAME_ID_MISMATCH",
+          expectedReason: AUTHORIZATION_ERROR_REASON.GAME_ID_MISMATCH,
         },
       ]
 
       describe.each(INVALID_AUTH_CASES)(
         "given $label",
-        ({ buildCookie, expectedReason }) => {
+        ({ buildSession, expectedReason }) => {
           let thrown: unknown
 
           beforeEach(() => {
             thrown = captureThrownError(() =>
-              Authorization.authorizeRequest({
-                request: createRequestWithCookie(buildCookie()),
+              Authorization.authorizeAnonymousRequest({
+                request: createRequestWithSession(buildSession()),
                 gameId: TEST_FIXTURES.gameId,
                 required: true,
               })
@@ -326,8 +339,8 @@ describe("Authorization", () => {
         beforeEach(() => {
           vi.stubEnv("AUTH_SECRET", "")
           thrown = captureThrownError(() =>
-            Authorization.authorizeRequest({
-              request: createRequestWithCookie(),
+            Authorization.authorizeAnonymousRequest({
+              request: createRequestWithSession(),
               gameId: TEST_FIXTURES.gameId,
               required: true,
             })
@@ -344,8 +357,8 @@ describe("Authorization", () => {
 
         beforeEach(() => {
           thrown = captureThrownError(() =>
-            Authorization.authorizeRequest({
-              request: createRequestWithCookie(),
+            Authorization.authorizeAnonymousRequest({
+              request: createRequestWithSession(),
               gameId,
               required: true,
             })
@@ -355,10 +368,72 @@ describe("Authorization", () => {
         it("throws an Error indicating gameId is required", () => {
           expect(thrown).toBeInstanceOf(Error)
           expect((thrown as Error).message).toBe(
-            "gameId is required when authorization is enabled"
+            "gameId is required for anonymous session authorization"
           )
         })
       })
+    })
+  })
+
+  describe("player identity sessions", () => {
+    it("creates a signed HttpOnly session with a 400-day lifetime", () => {
+      const header = Authorization.playerResponseHeaderFactory(
+        TEST_FIXTURES.gameId,
+        TEST_FIXTURES.playerId
+      )
+
+      expect(header).toContain(
+        `${Authorization.PLAYER_SESSION_PREFIX}${TEST_FIXTURES.gameId}=`
+      )
+      expect(header).toContain("Path=/")
+      expect(header).toContain("HttpOnly")
+      expect(header).toContain("SameSite=Lax")
+      expect(header).toContain(
+        `Max-Age=${Authorization.PLAYER_MAX_AGE_SECONDS}`
+      )
+    })
+
+    it("authorizes a valid player identity for the matching game", () => {
+      const request = createRequestWithSession(issuePlayerSessionPair())
+
+      expect(
+        Authorization.authorizePlayerRequest(request, TEST_FIXTURES.gameId)
+      ).toEqual({
+        gameId: TEST_FIXTURES.gameId,
+        playerId: TEST_FIXTURES.playerId,
+      })
+    })
+
+    it("rejects a player identity signed for a different game", () => {
+      const otherSession = issuePlayerSessionPair(
+        TEST_FIXTURES.otherGameId
+      ).split("=")[1]
+      const request = createRequestWithSession(
+        `${Authorization.PLAYER_SESSION_PREFIX}${TEST_FIXTURES.gameId}=${otherSession}`
+      )
+
+      expect(() =>
+        Authorization.authorizePlayerRequest(request, TEST_FIXTURES.gameId)
+      ).toThrow(
+        expect.objectContaining({
+          reason: AUTHORIZATION_ERROR_REASON.GAME_ID_MISMATCH,
+        })
+      )
+    })
+
+    it("rejects a tampered player identity signature", () => {
+      const [sessionName, token] = issuePlayerSessionPair().split("=")
+      const request = createRequestWithSession(
+        `${sessionName}=${token.slice(0, -1)}X`
+      )
+
+      expect(() =>
+        Authorization.authorizePlayerRequest(request, TEST_FIXTURES.gameId)
+      ).toThrow(
+        expect.objectContaining({
+          reason: AUTHORIZATION_ERROR_REASON.INVALID_SIGNATURE,
+        })
+      )
     })
   })
 })

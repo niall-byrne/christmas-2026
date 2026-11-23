@@ -25,16 +25,24 @@ describe("redisKeys", () => {
     ])
   })
 
-  it("builds nested team and player keys accurately", () => {
+  it("builds team and game-level player keys accurately", () => {
     expect(redisKeys.teamPrefix(gameId)).toBe(`game:${gameId}:team:`)
     expect(redisKeys.teamPlayersSuffix).toBe(":players")
-    expect(redisKeys.playerKeyPrefixSuffix).toBe(":player:")
     expect(redisKeys.team(gameId, teamId)).toBe(`game:${gameId}:team:${teamId}`)
     expect(redisKeys.teamPlayers(gameId, teamId)).toBe(
       `game:${gameId}:team:${teamId}:players`
     )
-    expect(redisKeys.player(gameId, teamId, playerId)).toBe(
-      `game:${gameId}:team:${teamId}:player:${playerId}`
+    expect(redisKeys.player(gameId, playerId)).toBe(
+      `game:${gameId}:player:${playerId}`
+    )
+    expect(redisKeys.gamePlayer(gameId, playerId)).toBe(
+      `game:${gameId}:player:${playerId}`
+    )
+    expect(redisKeys.removePlayerVote(gameId, playerId)).toBe(
+      `game:${gameId}:remove-vote:${playerId}`
+    )
+    expect(redisKeys.removePlayerVoteApprovals(gameId, playerId)).toBe(
+      `game:${gameId}:remove-vote:${playerId}:approvals`
     )
   })
 })

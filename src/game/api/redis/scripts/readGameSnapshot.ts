@@ -9,6 +9,7 @@ export const readGameSnapshotScript = `
 
   local cardsHash = redis.call("HGETALL", KEYS[2])
   local teamIds = redis.call("SMEMBERS", KEYS[3])
+  local gamePlayerIds = redis.call("SMEMBERS", KEYS[4])
   local teams = {}
   local teamPrefix = KEYS[1] .. ":team:"
 
@@ -19,12 +20,22 @@ export const readGameSnapshotScript = `
     local players = {}
 
     for _, playerId in ipairs(playerIds) do
-      local playerHash = redis.call("HGETALL", teamKey .. ":player:" .. playerId)
+      local playerHash = redis.call("HGETALL", KEYS[1] .. ":player:" .. playerId)
       table.insert(players, { playerId, playerHash })
     end
 
     table.insert(teams, { teamId, teamHash, players })
   end
 
-  return { "${GAME_SCRIPT_RESULT.SUCCESS}", gameHash, cardsHash, teams }
+  local unassigned = {}
+  for _, playerId in ipairs(gamePlayerIds) do
+    local playerKey = KEYS[1] .. ":player:" .. playerId
+    local playerHash = redis.call("HGETALL", playerKey)
+    local teamId = redis.call("HGET", playerKey, "team_id")
+    if not teamId then
+      table.insert(unassigned, { playerId, playerHash })
+    end
+  end
+
+  return { "${GAME_SCRIPT_RESULT.SUCCESS}", gameHash, cardsHash, teams, unassigned }
 `

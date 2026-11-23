@@ -50,6 +50,7 @@ describe("GameStateEvents", () => {
       createdAt: "2026-11-14T00:00:00.000Z",
       recipients: [],
       teams: [],
+      unassignedPlayers: [],
     }
 
     beforeEach(() => {
@@ -154,6 +155,7 @@ describe("GameStateEvents", () => {
               createdAt: "2026-11-14T00:00:00.000Z",
               recipients: [],
               teams: [],
+              unassignedPlayers: [],
             },
           })
         )

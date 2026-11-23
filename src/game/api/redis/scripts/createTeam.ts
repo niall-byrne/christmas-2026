@@ -16,6 +16,10 @@ export const createTeamScript = `
     return { "${ApiErrorCode.GAME_NOT_FOUND}" }
   end
 
+  if redis.call("HGET", gameKey, "level") ~= "0" then
+    return { "${ApiErrorCode.GAME_NOT_IN_LOBBY}" }
+  end
+
   if not keyHasType(gameKey, "hash")
     or not keyHasType(gameMembersKey, "set")
     or not keyHasType(teamNamesKey, "set")

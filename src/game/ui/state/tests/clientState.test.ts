@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest"
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { gameClientState } from "@/game/ui/state/clientState"
 import {
   GAME_COMPLETE_LEVEL,
@@ -28,6 +28,7 @@ describe("game client state", () => {
       createdAt: TEST_FIXTURES.createdAt,
       recipients: [],
       teams: [],
+      unassignedPlayers: [],
     }
   }
 
@@ -221,6 +222,108 @@ describe("game client state", () => {
       expect(gameClientState.getSnapshot(TEST_FIXTURES.gameIds.second)).toEqual(
         secondGame
       )
+    })
+  })
+
+  describe("when a subscribed listener receives a newer snapshot", () => {
+    let listener: () => void
+    let unsubscribe: () => void
+
+    beforeEach(() => {
+      gameClientState.applySnapshot(activeSnapshot())
+      listener = vi.fn()
+      unsubscribe = gameClientState.subscribe(
+        TEST_FIXTURES.gameIds.first,
+        listener
+      )
+    })
+
+    afterEach(() => {
+      unsubscribe()
+    })
+
+    it("notifies the listener when a newer snapshot is applied", () => {
+      gameClientState.applySnapshot(
+        activeSnapshot(TEST_FIXTURES.gameIds.first, 2)
+      )
+
+      expect(listener).toHaveBeenCalledOnce()
+    })
+  })
+
+  describe("when a subscribed listener receives a stale snapshot", () => {
+    let listener: () => void
+    let unsubscribe: () => void
+
+    beforeEach(() => {
+      gameClientState.applySnapshot(activeSnapshot())
+      listener = vi.fn()
+      unsubscribe = gameClientState.subscribe(
+        TEST_FIXTURES.gameIds.first,
+        listener
+      )
+    })
+
+    afterEach(() => {
+      unsubscribe()
+    })
+
+    it("does not notify the listener when the stale snapshot is ignored", () => {
+      gameClientState.applySnapshot(
+        activeSnapshot(TEST_FIXTURES.gameIds.first, 1, "Stale")
+      )
+
+      expect(listener).not.toHaveBeenCalled()
+    })
+  })
+
+  describe("when a subscribed game's snapshot is cleared", () => {
+    let listener: () => void
+    let unsubscribe: () => void
+
+    beforeEach(() => {
+      gameClientState.applySnapshot(activeSnapshot())
+      listener = vi.fn()
+      unsubscribe = gameClientState.subscribe(
+        TEST_FIXTURES.gameIds.first,
+        listener
+      )
+    })
+
+    afterEach(() => {
+      unsubscribe()
+    })
+
+    it("notifies the listener when the game's snapshot is cleared", () => {
+      gameClientState.clearSnapshot(TEST_FIXTURES.gameIds.first)
+
+      expect(listener).toHaveBeenCalledOnce()
+      expect(
+        gameClientState.getSnapshot(TEST_FIXTURES.gameIds.first)
+      ).toBeNull()
+    })
+  })
+
+  describe("when a listener unsubscribes", () => {
+    let listener: () => void
+    let unsubscribe: () => void
+
+    beforeEach(() => {
+      gameClientState.applySnapshot(activeSnapshot())
+      listener = vi.fn()
+      unsubscribe = gameClientState.subscribe(
+        TEST_FIXTURES.gameIds.first,
+        listener
+      )
+      unsubscribe()
+    })
+
+    it("does not notify the listener on later snapshot changes", () => {
+      gameClientState.applySnapshot(
+        activeSnapshot(TEST_FIXTURES.gameIds.first, 2)
+      )
+
+      expect(listener).not.toHaveBeenCalled()
     })
   })
 })

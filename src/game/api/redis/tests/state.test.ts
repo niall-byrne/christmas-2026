@@ -5,65 +5,82 @@ import {
   GAME_COMPLETE_LEVEL,
   GAME_LOBBY_LEVEL,
 } from "@/contracts/game/api/data/game"
-import { InvalidGameStateError } from "@/game/api/error/state"
+import {
+  INVALID_GAME_STATE_REASON,
+  InvalidGameStateError,
+} from "@/game/api/error/state"
 import { GameState } from "@/game/api/redis/state"
 import { RedisClient } from "@/redis/api/client"
 import { GAME_SCRIPT_RESULT } from "@/game/api/redis/scripts/resultCodes"
 
 type RedisStateClient = Pick<ReturnType<typeof RedisClient.getClient>, "eval">
 
-interface RedisStateFixture {
-  hashes?: Record<string, Record<string, string>>
-  sets?: Record<string, string[]>
+type RedisHash = Record<string, string>
+type SnapshotPlayerFixture = { playerId: string; hash: RedisHash }
+type SnapshotTeamFixture = {
+  teamId: string
+  hash: RedisHash
+  players?: SnapshotPlayerFixture[]
 }
 
-function createRedisStateClient({
-  hashes = {},
-  sets = {},
-}: RedisStateFixture = {}): RedisStateClient {
-  return {
-    eval: vi.fn(
-      async (
-        _script: string,
-        _numberOfKeys: number,
-        gameKey: string,
-        cardsKey: string,
-        teamsKey: string
-      ) => {
-        const gameHash = hashes[gameKey] ?? {}
-        if (Object.keys(gameHash).length === 0) {
-          return [GAME_SCRIPT_RESULT.NOT_FOUND]
-        }
-
-        const toEntries = (hash: Record<string, string>) =>
-          Object.entries(hash).flatMap(([key, value]) => [key, value])
-
-        const teams = (sets[teamsKey] ?? []).map((teamId) => {
-          const teamKey = `${gameKey}:team:${teamId}`
-          const players = (sets[`${teamKey}:players`] ?? []).map((playerId) => [
-            playerId,
-            toEntries(hashes[`${teamKey}:player:${playerId}`] ?? {}),
-          ])
-          return [teamId, toEntries(hashes[teamKey] ?? {}), players]
-        })
-
-        return [
-          GAME_SCRIPT_RESULT.SUCCESS,
-          toEntries(gameHash),
-          toEntries(hashes[cardsKey] ?? {}),
-          teams,
-        ]
-      }
-    ) as unknown as RedisStateClient["eval"],
-  }
+function hashEntries(hash: RedisHash): string[] {
+  return Object.entries(hash).flatMap(([key, value]) => [key, value])
 }
 
-function mockRedisClient(fixture: RedisStateFixture = {}): RedisStateClient {
-  const client = createRedisStateClient(fixture)
+function successSnapshot({
+  game,
+  cards = {},
+  teams = [],
+  unassignedPlayers = [],
+}: {
+  game: RedisHash
+  cards?: RedisHash
+  teams?: SnapshotTeamFixture[]
+  unassignedPlayers?: SnapshotPlayerFixture[]
+}) {
+  return [
+    GAME_SCRIPT_RESULT.SUCCESS,
+    hashEntries(game),
+    hashEntries(cards),
+    teams.map(({ teamId, hash, players = [] }) => [
+      teamId,
+      hashEntries(hash),
+      players.map(({ playerId, hash: playerHash }) => [
+        playerId,
+        hashEntries(playerHash),
+      ]),
+    ]),
+    unassignedPlayers.map(({ playerId, hash }) => [
+      playerId,
+      hashEntries(hash),
+    ]),
+  ]
+}
+
+function mockRedisClient(snapshot: unknown = [GAME_SCRIPT_RESULT.NOT_FOUND]) {
+  const client = {
+    eval: vi.fn().mockResolvedValue(snapshot),
+  } as unknown as RedisStateClient
   vi.spyOn(RedisClient, "getClient").mockReturnValue(
     client as unknown as ReturnType<typeof RedisClient.getClient>
   )
   return client
+}
+
+function readCompletedGameWithCards(gameId: string, cards: RedisHash) {
+  mockRedisClient(
+    successSnapshot({
+      game: {
+        level: String(GAME_COMPLETE_LEVEL),
+        revision: "9",
+        created_at: "2026-11-14T00:00:00.000Z",
+        name: "Completed Game",
+        bonus_card: "Ruby Crown",
+      },
+      cards,
+    })
+  )
+  return new GameState(gameId).read()
 }
 
 describe("GameState", () => {
@@ -83,12 +100,7 @@ describe("GameState", () => {
   const gameKey = `game:${TEST_FIXTURES.gameId}`
   const cardsKey = `${gameKey}:cards`
   const teamsKey = `${gameKey}:teams`
-  const alphaTeamKey = `${gameKey}:team:${TEST_FIXTURES.teamIds.alpha}`
-  const zuluTeamKey = `${gameKey}:team:${TEST_FIXTURES.teamIds.zulu}`
-  const zuluPlayersKey = `${zuluTeamKey}:players`
-  const alicePlayerKey = `${zuluTeamKey}:player:${TEST_FIXTURES.playerIds.alice}`
-  const bobPlayerKey = `${zuluTeamKey}:player:${TEST_FIXTURES.playerIds.bob}`
-
+  const gamePlayersKey = `${gameKey}:players`
   beforeEach(() => {
     vi.stubGlobal("redisClient", undefined)
   })
@@ -112,10 +124,11 @@ describe("GameState", () => {
         await expect(state).resolves.toBeNull()
         expect(client.eval).toHaveBeenCalledExactlyOnceWith(
           expect.any(String),
-          3,
+          4,
           gameKey,
           cardsKey,
-          teamsKey
+          teamsKey,
+          gamePlayersKey
         )
       })
     })
@@ -124,16 +137,16 @@ describe("GameState", () => {
       let state: Promise<Awaited<ReturnType<GameState["read"]>>>
 
       beforeEach(() => {
-        mockRedisClient({
-          hashes: {
-            [gameKey]: {
+        mockRedisClient(
+          successSnapshot({
+            game: {
               level: "invalid",
               revision: "1",
               created_at: TEST_FIXTURES.createdAt,
               name: "Holiday Game",
             },
-          },
-        })
+          })
+        )
         state = new GameState(TEST_FIXTURES.gameId).read()
       })
 
@@ -147,15 +160,15 @@ describe("GameState", () => {
       let state: Promise<Awaited<ReturnType<GameState["read"]>>>
 
       beforeEach(() => {
-        mockRedisClient({
-          hashes: {
-            [gameKey]: {
+        mockRedisClient(
+          successSnapshot({
+            game: {
               level: String(GAME_LOBBY_LEVEL),
               created_at: TEST_FIXTURES.createdAt,
               name: "Holiday Game",
             },
-          },
-        })
+          })
+        )
         state = new GameState(TEST_FIXTURES.gameId).read()
       })
 
@@ -168,9 +181,9 @@ describe("GameState", () => {
       let state: Awaited<ReturnType<GameState["read"]>>
 
       beforeEach(async () => {
-        mockRedisClient({
-          hashes: {
-            [gameKey]: {
+        mockRedisClient(
+          successSnapshot({
+            game: {
               level: String(GAME_LOBBY_LEVEL),
               revision: "7",
               created_at: TEST_FIXTURES.createdAt,
@@ -178,7 +191,7 @@ describe("GameState", () => {
               password_hash: "secret-hash",
               bonus_card: "Hidden Crown",
             },
-            [cardsKey]: {
+            cards: {
               zoe: JSON.stringify({
                 recipient: " Zoe ",
                 identifier: "Hidden Card",
@@ -192,30 +205,36 @@ describe("GameState", () => {
                 identifier: "Hidden Card",
               }),
             },
-            [alphaTeamKey]: {
-              name: "Alpha Team",
-              color: "#AABBCC",
-              score: "3",
-            },
-            [zuluTeamKey]: {
-              name: "Zulu Team",
-              color: "#112233",
-              score: "12",
-            },
-            [alicePlayerKey]: { name: "Alice", ready: "1" },
-            [bobPlayerKey]: { name: "Bob", ready: "0" },
-          },
-          sets: {
-            [teamsKey]: [
-              TEST_FIXTURES.teamIds.zulu,
-              TEST_FIXTURES.teamIds.alpha,
+            teams: [
+              {
+                teamId: TEST_FIXTURES.teamIds.zulu,
+                hash: {
+                  name: "Zulu Team",
+                  color: "#112233",
+                  score: "12",
+                },
+                players: [
+                  {
+                    playerId: TEST_FIXTURES.playerIds.bob,
+                    hash: { name: "Bob", ready: "0" },
+                  },
+                  {
+                    playerId: TEST_FIXTURES.playerIds.alice,
+                    hash: { name: "Alice", ready: "1" },
+                  },
+                ],
+              },
+              {
+                teamId: TEST_FIXTURES.teamIds.alpha,
+                hash: {
+                  name: "Alpha Team",
+                  color: "#AABBCC",
+                  score: "3",
+                },
+              },
             ],
-            [zuluPlayersKey]: [
-              TEST_FIXTURES.playerIds.bob,
-              TEST_FIXTURES.playerIds.alice,
-            ],
-          },
-        })
+          })
+        )
         state = await new GameState(TEST_FIXTURES.gameId).read()
       })
 
@@ -227,6 +246,7 @@ describe("GameState", () => {
           revision: 7,
           createdAt: TEST_FIXTURES.createdAt,
           recipients: ["Alice", "Bob", "Zoe"],
+          unassignedPlayers: [],
           teams: [
             {
               teamId: TEST_FIXTURES.teamIds.alpha,
@@ -262,16 +282,16 @@ describe("GameState", () => {
       let state: Awaited<ReturnType<GameState["read"]>>
 
       beforeEach(async () => {
-        mockRedisClient({
-          hashes: {
-            [gameKey]: {
+        mockRedisClient(
+          successSnapshot({
+            game: {
               level: String(GAME_COMPLETE_LEVEL),
               revision: "9",
               created_at: TEST_FIXTURES.createdAt,
               name: "Completed Game",
               bonus_card: "Ruby Crown",
             },
-            [cardsKey]: {
+            cards: {
               zoe: JSON.stringify({
                 recipient: "Zoe",
                 identifier: "Bronze Star",
@@ -285,8 +305,8 @@ describe("GameState", () => {
                 identifier: "Silver Star",
               }),
             },
-          },
-        })
+          })
+        )
         state = await new GameState(TEST_FIXTURES.gameId).read()
       })
 
@@ -298,6 +318,7 @@ describe("GameState", () => {
           revision: 9,
           createdAt: TEST_FIXTURES.createdAt,
           recipients: ["Alice", "Bob", "Zoe"],
+          unassignedPlayers: [],
           teams: [],
           bonusCard: "Ruby Crown",
           cards: [
@@ -305,6 +326,40 @@ describe("GameState", () => {
             { recipient: "Bob", identifier: "Silver Star" },
             { recipient: "Zoe", identifier: "Bronze Star" },
           ],
+        })
+      })
+
+      describe("when a completed game's card JSON is malformed", () => {
+        let state: Promise<Awaited<ReturnType<GameState["read"]>>>
+
+        beforeEach(() => {
+          state = readCompletedGameWithCards(TEST_FIXTURES.gameId, {
+            alice: "{invalid-json",
+          })
+        })
+
+        it("throws InvalidGameStateError instead of omitting the card", async () => {
+          await expect(state).rejects.toBeInstanceOf(InvalidGameStateError)
+          await expect(state).rejects.toThrow(
+            INVALID_GAME_STATE_REASON.INVALID_REDIS_CARD
+          )
+        })
+      })
+
+      describe("when a completed game's card data is missing required fields", () => {
+        let state: Promise<Awaited<ReturnType<GameState["read"]>>>
+
+        beforeEach(() => {
+          state = readCompletedGameWithCards(TEST_FIXTURES.gameId, {
+            alice: JSON.stringify({ recipient: "Alice" }),
+          })
+        })
+
+        it("throws InvalidGameStateError instead of omitting the card", async () => {
+          await expect(state).rejects.toBeInstanceOf(InvalidGameStateError)
+          await expect(state).rejects.toThrow(
+            INVALID_GAME_STATE_REASON.INVALID_REDIS_CARD
+          )
         })
       })
     })

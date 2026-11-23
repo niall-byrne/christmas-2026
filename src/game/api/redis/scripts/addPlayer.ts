@@ -7,29 +7,24 @@ export const addPlayerScript = `
   ${gameMutationValidation}
 
   local gameKey = KEYS[1]
-  local teamKey = KEYS[2]
-  local teamPlayersKey = KEYS[3]
-  local cardsKey = KEYS[4]
-  local playerNamesKey = KEYS[5]
-  local gamePlayersKey = KEYS[6]
-  local playerKey = KEYS[7]
+  local cardsKey = KEYS[2]
+  local playerNamesKey = KEYS[3]
+  local gamePlayersKey = KEYS[4]
+  local playerKey = KEYS[5]
 
   if redis.call("EXISTS", gameKey) == 0 then
     return { "${ApiErrorCode.GAME_NOT_FOUND}" }
   end
 
-  if redis.call("EXISTS", teamKey) == 0 then
-    return { "${ApiErrorCode.TEAM_NOT_FOUND}" }
-  end
-
   if not keyHasType(gameKey, "hash")
-    or not keyHasType(teamKey, "hash")
-    or not keyHasType(teamPlayersKey, "set")
     or not keyHasType(cardsKey, "hash")
     or not keyHasType(playerNamesKey, "set")
     or not keyHasType(gamePlayersKey, "set")
     or not keyHasType(playerKey, "hash")
     or not revisionCanIncrement(gameKey) then
+    return invalidGameState()
+  end
+  if redis.call("EXISTS", playerKey) == 1 then
     return invalidGameState()
   end
 
@@ -43,10 +38,6 @@ export const addPlayerScript = `
     return { "${ApiErrorCode.NAME_NOT_AVAILABLE}" }
   end
 
-  if redis.call("SCARD", teamPlayersKey) >= 2 then
-    return { "${ApiErrorCode.TEAM_FULL}" }
-  end
-
   local payload = cjson.decode(cardJson)
   local playerId = ARGV[2]
   local playerName = payload["recipient"] or ARGV[3]
@@ -57,10 +48,11 @@ export const addPlayerScript = `
     playerKey,
     "name",
     playerName,
+    "normalized_name",
+    normalizedName,
     "ready",
     ready
   )
-  redis.call("SADD", teamPlayersKey, playerId)
   redis.call("SADD", gamePlayersKey, playerId)
   redis.call("SADD", playerNamesKey, normalizedName)
   redis.call("HINCRBY", gameKey, "revision", 1)

@@ -7,10 +7,22 @@ export async function addPlayer(
   teamId: string,
   name = TEST_FIXTURES.player.name
 ) {
-  const response = await context.post(
-    `/api/v1/games/${gameId}/teams/${teamId}/players`,
-    { data: { name } }
+  const player = await claimPlayer(context, gameId, name)
+  const assignment = await context.post(
+    `/api/v1/games/${gameId}/teams/${teamId}/players`
   )
+  expect(assignment.status()).toBe(200)
+  return player
+}
+
+export async function claimPlayer(
+  context: APIRequestContext,
+  gameId: string,
+  name = TEST_FIXTURES.player.name
+) {
+  const response = await context.post(`/api/v1/games/${gameId}/players`, {
+    data: { name },
+  })
   expect(response.status()).toBe(201)
   return response.json() as Promise<{ playerId: string }>
 }

@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest"
 import { ApiErrorCode } from "@/contracts/game/api/data"
-import { ApiRouteError } from "@/game/api/error/endpoint"
+import {
+  API_ENDPOINT_INVARIANT_REASON,
+  ApiEndpointInvariantError,
+  ApiRouteError,
+} from "@/game/api/error/endpoint"
 
 describe("ApiRouteError", () => {
   it("defaults client-side route errors to HTTP 400", () => {
@@ -8,6 +12,21 @@ describe("ApiRouteError", () => {
 
     expect(error.statusCode).toBe(400)
     expect(error.error).toBe(ApiErrorCode.INVALID_JSON)
+  })
+
+  describe("ApiEndpointInvariantError", () => {
+    it("preserves the invariant reason and diagnostic message", () => {
+      const error = new ApiEndpointInvariantError(
+        API_ENDPOINT_INVARIANT_REASON.PLAYER_IDENTITY_MISSING
+      )
+
+      expect(error).toBeInstanceOf(Error)
+      expect(error.name).toBe("ApiEndpointInvariantError")
+      expect(error.reason).toBe(
+        API_ENDPOINT_INVARIANT_REASON.PLAYER_IDENTITY_MISSING
+      )
+      expect(error.message).toBe("Player authorization was not completed")
+    })
   })
 
   it("preserves an explicitly supplied status code and message", () => {

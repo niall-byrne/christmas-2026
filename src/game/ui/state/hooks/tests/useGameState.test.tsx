@@ -9,6 +9,7 @@ import {
   SSE_HEARTBEAT_INTERVAL_MS,
   SSE_HEARTBEAT_TIMEOUT_MS,
 } from "@/contracts/realtime/sse"
+import { GAME_STATE_CHANGED_EVENT_TYPE } from "@/schemas/game/redis/gameStateEvent"
 import { gameClientState } from "@/game/ui/state/clientState"
 import { useGameState } from "@/game/ui/state/hooks/useGameState"
 
@@ -80,6 +81,7 @@ describe("useGameState", () => {
       createdAt: TEST_FIXTURES.createdAt,
       recipients: [],
       teams: [],
+      unassignedPlayers: [],
     }
   }
 
@@ -190,7 +192,7 @@ describe("useGameState", () => {
         act(() =>
           source.emitMessage(
             JSON.stringify({
-              type: "game.state.changed",
+              type: GAME_STATE_CHANGED_EVENT_TYPE,
               data: snapshot(2, "Updated by the stream"),
             })
           )
@@ -385,7 +387,7 @@ describe("useGameState", () => {
       act(() => {
         source.emitMessage(
           JSON.stringify({
-            type: "game.state.changed",
+            type: GAME_STATE_CHANGED_EVENT_TYPE,
             data: accepted,
           })
         )
@@ -412,11 +414,14 @@ describe("useGameState", () => {
 
       act(() => {
         source.emitMessage(
-          JSON.stringify({ type: "game.state.changed", data: accepted })
+          JSON.stringify({
+            type: GAME_STATE_CHANGED_EVENT_TYPE,
+            data: accepted,
+          })
         )
         source.emitMessage(
           JSON.stringify({
-            type: "game.state.changed",
+            type: GAME_STATE_CHANGED_EVENT_TYPE,
             data: snapshot(4, "Late old update"),
           })
         )
@@ -471,7 +476,7 @@ describe("useGameState", () => {
       act(() =>
         source.emitMessage(
           JSON.stringify({
-            type: "game.state.changed",
+            type: GAME_STATE_CHANGED_EVENT_TYPE,
             data: { gameId: TEST_FIXTURES.gameId, revision: -1 },
           })
         )

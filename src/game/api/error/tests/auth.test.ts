@@ -2,6 +2,7 @@
 
 import { describe, it, expect, beforeEach } from "vitest"
 import type { AuthorizationErrorReason } from "@/contracts/game/api"
+import { AUTHORIZATION_ERROR_REASON } from "@/contracts/game/api/auth"
 import { ApiErrorCode } from "@/contracts/game/api/data"
 import {
   AuthorizationError,
@@ -46,10 +47,10 @@ describe("auth error classes", () => {
 
   describe("AuthorizationError", () => {
     describe.each<AuthorizationErrorReason>([
-      "MISSING_COOKIE",
-      "MALFORMED_TOKEN",
-      "INVALID_SIGNATURE",
-      "GAME_ID_MISMATCH",
+      AUTHORIZATION_ERROR_REASON.MISSING_COOKIE,
+      AUTHORIZATION_ERROR_REASON.MALFORMED_TOKEN,
+      AUTHORIZATION_ERROR_REASON.INVALID_SIGNATURE,
+      AUTHORIZATION_ERROR_REASON.GAME_ID_MISMATCH,
     ])("when instantiated with reason %s", (reason) => {
       let error: AuthorizationError
 
@@ -72,11 +73,14 @@ describe("auth error classes", () => {
       let error: AuthorizationError
 
       beforeEach(() => {
-        error = new AuthorizationError("INVALID_SIGNATURE", "Bad HMAC")
+        error = new AuthorizationError(
+          AUTHORIZATION_ERROR_REASON.INVALID_SIGNATURE,
+          "Bad HMAC"
+        )
       })
 
       it("preserves the custom message and reason", () => {
-        expect(error.reason).toBe("INVALID_SIGNATURE")
+        expect(error.reason).toBe(AUTHORIZATION_ERROR_REASON.INVALID_SIGNATURE)
         expect(error.message).toBe("Bad HMAC")
       })
     })

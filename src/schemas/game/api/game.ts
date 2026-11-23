@@ -99,6 +99,13 @@ const BaseGameResponseSchema = z.object({
   createdAt: z.string(),
   recipients: z.array(PlayerNameSchema),
   teams: z.array(TeamStateSchema),
+  unassignedPlayers: z.array(
+    z.object({
+      playerId: PlayerIdSchema,
+      name: PlayerNameSchema,
+      ready: z.literal(false),
+    })
+  ),
 })
 
 export const GetGameResponseSchema: z.ZodType<GetGameResponse> = z.union([

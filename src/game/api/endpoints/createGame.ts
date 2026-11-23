@@ -2,6 +2,8 @@ import "server-only"
 import type { ApiEndpointInput } from "@/contracts/game/api"
 import { GAME_LOBBY_LEVEL } from "@/contracts/game/api/data"
 import { Authorization } from "@/game/api/auth"
+import { GAME_SCRIPT_CONTRACT_ERROR } from "@/contracts/game/api/data/gameScript"
+import { GameScriptContractError } from "@/game/api/redis/scripts/errors/gameScriptContract"
 import { ApiEndpointBase } from "@/game/api/endpoints/bases/apiEndpointBase"
 import { serializeCardEntry } from "@/game/api/services/card"
 import { gameIds } from "@/game/api/services/ids"
@@ -9,6 +11,7 @@ import { gameAuthRateLimiter } from "@/game/api/services/joinRateLimit"
 import { gamePasswords } from "@/game/api/services/password"
 import { redisKeys } from "@/game/api/redis/redisKeys"
 import { createGameScript } from "@/game/api/redis/scripts/createGame"
+import { GAME_SCRIPT_RESULT } from "@/game/api/redis/scripts/resultCodes"
 import { redisLookupKey } from "@/game/api/redis/redisLookupKey"
 import { RedisClient } from "@/redis/api/client"
 import { z } from "zod"
@@ -19,7 +22,7 @@ class CreateGameEndpoint extends ApiEndpointBase<
   typeof CreateGameBodySchema
 > {
   protected override bodySchema = CreateGameBodySchema
-  protected override requiresAuth = false
+  protected override requiresAnonymousSession = false
 
   protected async execute({
     body,
@@ -57,8 +60,10 @@ class CreateGameEndpoint extends ApiEndpointBase<
       JSON.stringify(gameHash),
       JSON.stringify(cardsLookup)
     )
-    if (result !== "OK") {
-      throw new Error("Create-game script returned an unexpected result")
+    if (result !== GAME_SCRIPT_RESULT.SUCCESS) {
+      throw new GameScriptContractError(
+        GAME_SCRIPT_CONTRACT_ERROR.CREATE_GAME_RESULT
+      )
     }
 
     return {

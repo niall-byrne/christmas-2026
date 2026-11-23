@@ -13,6 +13,11 @@ const SCRIPT_ERROR_STATUSES: Partial<Record<ApiErrorCode, number>> = {
   [ApiErrorCode.NAME_NOT_AVAILABLE]: 409,
   [ApiErrorCode.RECIPIENT_NOT_FOUND]: 422,
   [ApiErrorCode.TEAM_FULL]: 422,
+  [ApiErrorCode.PLAYER_IDENTITY_EXISTS]: 409,
+  [ApiErrorCode.GAME_NOT_IN_LOBBY]: 409,
+  [ApiErrorCode.PLAYER_NOT_ASSIGNED]: 409,
+  [ApiErrorCode.REMOVE_VOTE_EXPIRED]: 409,
+  [ApiErrorCode.CANNOT_REMOVE_SELF]: 409,
 }
 
 function isScriptValue(value: unknown): value is string | number {

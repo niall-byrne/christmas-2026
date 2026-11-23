@@ -2,7 +2,10 @@ import { type APIRequestContext, type APIResponse } from "@playwright/test"
 
 export interface PlaywrightTestHost {
   request: {
-    newContext(options: { baseURL: string }): Promise<APIRequestContext>
+    newContext(options: {
+      baseURL: string
+      storageState?: Awaited<ReturnType<APIRequestContext["storageState"]>>
+    }): Promise<APIRequestContext>
   }
 }
 
@@ -19,6 +22,22 @@ export async function createApiContext(
   playwright: PlaywrightTestHost
 ): Promise<APIRequestContext> {
   return playwright.request.newContext({ baseURL: "http://127.0.0.1:3000" })
+}
+
+export async function createPlayerApiContext(
+  playwright: PlaywrightTestHost,
+  session: APIRequestContext
+): Promise<APIRequestContext> {
+  const storageState = await session.storageState()
+  return playwright.request.newContext({
+    baseURL: "http://127.0.0.1:3000",
+    storageState: {
+      ...storageState,
+      cookies: storageState.cookies.filter(
+        ({ name }) => !name.startsWith("game_player_")
+      ),
+    },
+  })
 }
 
 export async function captureResponse(response: APIResponse) {

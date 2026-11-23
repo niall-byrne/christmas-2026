@@ -17,7 +17,7 @@ class JoinGameEndpoint extends ApiEndpointBase<
 > {
   protected override paramsSchema = GameParamsSchema
   protected override bodySchema = JoinGameBodySchema
-  protected override requiresAuth = false
+  protected override requiresAnonymousSession = false
 
   protected async execute({
     params,

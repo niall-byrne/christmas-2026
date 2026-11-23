@@ -6,11 +6,10 @@ import {
 } from "@/contracts/game/api/data"
 import { ApiRouteError } from "@/game/api/error/endpoint"
 import { ApiEndpointBase } from "@/game/api/endpoints/bases/apiEndpointBase"
+import { GameMutationEndpointBase } from "@/game/api/endpoints/bases/gameMutationEndpointBase"
 import { GameState } from "@/game/api/redis/state"
 import { redisKeys } from "@/game/api/redis/redisKeys"
-import { publishGameStateChanged } from "@/game/api/redis/publishState"
 import { executeGameScript } from "@/game/api/redis/scripts/execute"
-import { GAME_SCRIPT_RESULT } from "@/game/api/redis/scripts/resultCodes"
 import { updateGameScript } from "@/game/api/redis/scripts/updateGame"
 import { RedisClient } from "@/redis/api/client"
 import { GameParamsSchema, UpdateGameBodySchema } from "@/schemas/game/api/game"
@@ -41,7 +40,7 @@ class ReadGameEndpoint extends ApiEndpointBase<typeof GameParamsSchema> {
 
 export const GET = new ReadGameEndpoint().handle
 
-class UpdateGameEndpoint extends ApiEndpointBase<
+class UpdateGameEndpoint extends GameMutationEndpointBase<
   typeof GameParamsSchema,
   typeof UpdateGameBodySchema
 > {
@@ -69,13 +68,10 @@ class UpdateGameEndpoint extends ApiEndpointBase<
         String(GAME_COMPLETE_TTL_SECONDS),
         redisKeys.teamPrefix(params.gameId),
         redisKeys.teamPlayersSuffix,
-        redisKeys.playerKeyPrefixSuffix,
       ]
     )
 
-    if (result[0] !== GAME_SCRIPT_RESULT.NO_OP) {
-      await publishGameStateChanged(params.gameId, logger)
-    }
+    await this.publishMutationState(params.gameId, logger, result)
 
     const refreshed = await client.hgetall(gameKey)
     const createdAt = refreshed.created_at ?? new Date().toISOString()

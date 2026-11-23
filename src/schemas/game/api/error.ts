@@ -1,7 +1,10 @@
 import { ApiErrorCode } from "@/contracts/game/api/data"
 
 export const ERROR_MESSAGES: Record<ApiErrorCode, string> = {
+  [ApiErrorCode.CANNOT_REMOVE_SELF]:
+    "Cannot remove yourself through a remove-player vote",
   [ApiErrorCode.GAME_NOT_FOUND]: "Game not found",
+  [ApiErrorCode.GAME_NOT_IN_LOBBY]: "Game is no longer in the lobby",
   [ApiErrorCode.INCORRECT_GAME_PASSWORD]: "Incorrect game password",
   [ApiErrorCode.INTERNAL_SERVER_ERROR]: "Internal server error",
   [ApiErrorCode.INVALID_BONUS_CARD]: "Invalid bonus card",
@@ -18,9 +21,12 @@ export const ERROR_MESSAGES: Record<ApiErrorCode, string> = {
   [ApiErrorCode.INVALID_TEAM_ID]: "Invalid team ID",
   [ApiErrorCode.INVALID_TEAM_NAME]: "Invalid name",
   [ApiErrorCode.NAME_NOT_AVAILABLE]: "Name not available",
+  [ApiErrorCode.PLAYER_IDENTITY_EXISTS]: "A player identity already exists",
+  [ApiErrorCode.PLAYER_NOT_ASSIGNED]: "Player is not assigned to a team",
   [ApiErrorCode.PLAYER_NOT_FOUND]: "Player not found",
   [ApiErrorCode.RATE_LIMITED]: "Too many requests",
   [ApiErrorCode.RECIPIENT_NOT_FOUND]: "Player not on recipient list",
+  [ApiErrorCode.REMOVE_VOTE_EXPIRED]: "Remove-player vote has expired",
   [ApiErrorCode.TEAM_COLOUR_NOT_AVAILABLE]: "Team colour not available",
   [ApiErrorCode.TEAM_FULL]: "Team already full",
   [ApiErrorCode.TEAM_NAME_NOT_AVAILABLE]: "Team name not available",
